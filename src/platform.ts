@@ -78,7 +78,8 @@ export function detach(command: string[], env: NodeJS.ProcessEnv = process.env, 
   });
 }
 /** Signal only a child whose live process handle is still held by this runner. */
-export function stopChild(child: ChildProcess, force: boolean, group: boolean): void {
+export interface ProcessHandle { pid?: number | undefined; exitCode: number | null; signalCode?: unknown }
+export function stopChild(child: ProcessHandle, force: boolean, group: boolean): void {
   if (!child.pid) return;
   if (process.platform !== "win32" && group) { if (!groupAlive(child.pid)) return; }
   else if (child.exitCode !== null || child.signalCode !== null) return;

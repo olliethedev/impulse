@@ -42,6 +42,7 @@ test("a script callback survives failure through the executable command path", a
   await invoke(home, ["task", "register", file]);
   let task;
   for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "callback"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
+  if (task.latest_run.status !== "failed") console.error(JSON.stringify(task.latest_run), (await invoke(home, ["run", "logs", task.latest_run.id])).result.data.log);
   expect(task.latest_run.status).toBe("failed"); expect(task.latest_run.script.exit_code).toBe(7); expect(task.next.source).toBe("explicit");
   const waited = await invoke(home, ["run", "wait", task.latest_run.id]); expect(waited.code).toBe(10); expect(waited.result.ok).toBe(true);
   expect((await invoke(home, ["run", "logs", task.latest_run.id])).result.data.log).toContain("callback committed");

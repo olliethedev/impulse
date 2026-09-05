@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { loadDefinition, parseSettings } from "../src/config.ts";
 import { fixture } from "./helpers.ts";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 test("unknown fields, mixed work variants, and unsupported cron dialects are rejected", () => {
   const f = fixture();
@@ -22,6 +22,6 @@ test("instruction-file contents and working directory are resolved from the defi
     writeFileSync(join(f.home, "instructions.md"), "Changed instructions");
     expect(f.engine.task(task.id).definition.work).toEqual({ kind: "agent", instructions: "Original instructions" });
     expect(loadDefinition(loaded.path).hash).not.toBe(loaded.hash);
-    expect(task.definition.cwd).toBe(f.home);
+    expect(task.definition.cwd).toBe(realpathSync(f.home));
   } finally { f.close(); }
 });

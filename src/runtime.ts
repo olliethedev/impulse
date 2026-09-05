@@ -6,10 +6,11 @@ import { Engine, type Ticket } from "./engine.ts";
 import { Store } from "./store.ts";
 import { paths, type Paths } from "./paths.ts";
 import { ImpulseError, message } from "./errors.ts";
-import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, selfCommand, stopChild } from "./platform.ts";
+import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, selfCommand, stopChild, type ProcessHandle } from "./platform.ts";
 import { assignmentInstructions, launchTerminal, substitute, type LaunchDescriptor } from "./adapters.ts";
 import { deliverPending, prune } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
+import { terminalProcess, type TerminalProcess, type ExecutionExit } from "./terminal-process.ts";
 
 export async function startDaemon(engine: Engine) {
   const current = engine.lease();
@@ -85,16 +86,34 @@ function childExit(child: ChildProcess): Promise<{ code: number | null; error: s
 export async function runner(file: string) {
   const descriptor = JSON.parse(readFileSync(file, "utf8")) as LaunchDescriptor;
   const store = new Store(descriptor.paths), engine = new Engine(store, Date.now, elapsedClock), nonce = randomUUID(), ticket = descriptor.ticket;
-  let log: number | undefined, child: ChildProcess | undefined, server: ChildProcess | undefined;
+  let log: number | undefined, child: ProcessHandle | undefined, server: ChildProcess | undefined, terminal: TerminalProcess | undefined;
+  let external = false, sentGrace = false, sentForce = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
+  const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
+  async function waitForOwnedGroups() {
+    if (!external && process.platform !== "win32") while ((child?.pid && groupAlive(child.pid)) || (server?.pid && groupAlive(server.pid))) await Bun.sleep(200);
+  }
   try {
     const run = engine.claim(ticket, nonce, process.pid, bootId());
+    heartbeat = setInterval(() => {
+      try {
+        const state = engine.heartbeat(ticket, nonce);
+        if (state.cancel && !state.done && (child || server) && (!sentGrace || (state.force && !sentForce))) {
+          if (!external) {
+            if (process.platform === "win32") privateJson(controlFile, { force: state.force });
+            else { if (server) stopChild(server, state.force, true); if (child) stopChild(child, state.force, true); }
+          }
+          sentGrace = true; sentForce ||= state.force;
+        }
+      } catch (error) { console.error(`Impulse runner: ${message(error)}`); }
+    }, 500);
     const context = ticket.kind === "agent" ? engine.agent(ticket.id).context : run.context;
     const env = { ...process.env, IMPULSE_CONTEXT: descriptor.context_file, IMPULSE_TASK_ID: context.task_id, IMPULSE_RUN_ID: context.run_id, ...(context.agent_id ? { IMPULSE_AGENT_ID: context.agent_id } : {}) };
     delete env.IMPULSE_AGENT_ID; if (context.agent_id) env.IMPULSE_AGENT_ID = context.agent_id;
     const script = ticket.kind === "script";
     const initialPrompt = `Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}. Follow them to complete this Impulse assignment and report its explicit outcome using the supplied CLI context.`;
-    let command: string[], external = false;
+    let command: string[];
     if (script) {
       if (run.definition.work.kind !== "script") throw new Error("Script ticket has agent definition");
       command = run.definition.work.command; log = openSync(join(descriptor.paths.logs, `${run.id}.log`), "a", 0o600);
@@ -112,7 +131,10 @@ export async function runner(file: string) {
         server = spawn("codex", ["app-server", "--listen", `unix://${socket}`], { cwd: run.definition.cwd, env, detached: true, stdio: ["ignore", "ignore", "inherit"] });
         let serverError: string | undefined;
         server.on("error", error => { serverError = message(error); });
-        for (let i = 0; i < 150 && !existsSync(socket) && !serverError && server.exitCode === null; i++) await Bun.sleep(100);
+        for (let i = 0; i < 150 && !existsSync(socket) && !serverError && server.exitCode === null; i++) {
+          if (engine.heartbeat(ticket, nonce).cancel) throw new Error("Cancelled during backend startup");
+          await Bun.sleep(100);
+        }
         if (!existsSync(socket)) throw new Error(serverError ?? "Private Codex backend did not start");
         command = ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, initialPrompt];
       } else {
@@ -120,30 +142,14 @@ export async function runner(file: string) {
         external = help.stdout.toString().includes("shared local app-server");
       }
     }
-    const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
-    const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
+    if (engine.heartbeat(ticket, nonce).cancel) throw new Error("Cancelled before execution started");
     const invocation = process.platform === "win32" && !external ? windowsCommand(command, run.definition.cwd, join(descriptor.paths.launches, `${ticket.id}.process.json`), controlFile, outcomeFile) : command;
-    child = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32" || script, stdio: script ? ["ignore", log!, log!] : "inherit", windowsHide: script });
-    const exit = childExit(child);
-    let sentGrace = false, sentForce = false;
-    heartbeat = setInterval(() => {
-      try {
-        const state = engine.heartbeat(ticket, nonce);
-        if (state.cancel && !state.done && (!sentGrace || (state.force && !sentForce))) {
-          // For shared external execution a process signal is not evidence of assignment termination.
-          if (!external) {
-            if (process.platform === "win32") privateJson(controlFile, { force: state.force });
-            else { stopChild(server ?? child!, state.force, true); if (server) stopChild(child!, state.force, true); }
-          }
-          sentGrace = true; sentForce ||= state.force;
-        }
-      } catch (error) { console.error(`Impulse runner: ${message(error)}`); }
-    }, 500);
+    let exit: Promise<ExecutionExit>;
+    if (!script && process.platform !== "win32") { terminal = terminalProcess(invocation, run.definition.cwd, env); child = terminal.process; exit = terminal.exited; }
+    else { const spawned = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32", stdio: script ? ["ignore", log!, log!] : "inherit", windowsHide: script }); child = spawned; exit = childExit(spawned); }
     const result = await exit;
     if (server) { try { stopChild(server, false, true); } catch { /* Reconciliation retains uncertainty below if needed. */ } }
-    if (!external && process.platform !== "win32") {
-      while ((child.pid && groupAlive(child.pid)) || (server?.pid && groupAlive(server.pid))) await Bun.sleep(200);
-    }
+    await waitForOwnedGroups();
     if (process.platform === "win32" && !external) {
       try {
         const proof = JSON.parse(readFileSync(outcomeFile, "utf8").replace(/^\uFEFF/, ""));
@@ -153,10 +159,15 @@ export async function runner(file: string) {
     }
     engine.ended(ticket, nonce, result.code, result.error, external);
   } catch (error) {
-    try { engine.ended(ticket, nonce, null, message(error)); } catch { /* A duplicate ticket must not mutate its original runner. */ }
     console.error(`Impulse runner: ${message(error)}`);
+    let uncertain = external && !!child?.pid;
+    try {
+      if (!external) { if (server) stopChild(server, false, true); if (child && process.platform !== "win32") stopChild(child, false, true); }
+      await waitForOwnedGroups();
+    } catch { uncertain = true; }
+    try { engine.ended(ticket, nonce, null, message(error), uncertain); } catch { /* A duplicate ticket must not mutate its original runner. */ }
   } finally {
-    if (heartbeat) clearInterval(heartbeat); if (log !== undefined) closeSync(log); store.close();
+    terminal?.close(); if (heartbeat) clearInterval(heartbeat); if (log !== undefined) closeSync(log); store.close();
   }
   if (descriptor.keep_open && process.stdin.isTTY) {
     console.log("\nImpulse assignment ended. This terminal remains open; press Enter to close the runner.");
