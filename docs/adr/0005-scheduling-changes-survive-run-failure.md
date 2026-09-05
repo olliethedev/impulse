@@ -1,0 +1,3 @@
+# Confirmed scheduling changes survive run failure
+
+Impulse persists a scheduling change when the CLI confirms it, independently of the run's eventual outcome. A script may already have consumed an external quota before failing during cleanup, so a later failure or interruption must not discard its confirmed next run time. The failure remains visible in run history; a later explicit definition update replaces upcoming timing under the [definition update decision](0004-explicit-definition-updates.md), while retry behavior and precedence between other subsequent instructions remain separate decisions.

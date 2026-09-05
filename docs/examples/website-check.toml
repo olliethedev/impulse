@@ -1,0 +1,28 @@
+# Design sample intended for a project's .impulse/tasks/ directory.
+schema_version = 1
+name = "website-check"
+cwd = "../.."
+
+[work]
+kind = "agent"
+instructions = """
+Inspect this project's website using the Vercel MCP tools already configured
+in the selected harness. Review recent deployments and available runtime errors.
+Summarize findings and any next actions. Follow the supplied Impulse instructions
+to record the assignment's outcome when finished.
+"""
+
+[first_run]
+kind = "schedule"
+
+[schedule]
+kind = "calendar"
+cron = "0 9 * * *"
+timezone = "local"
+
+[policy]
+catch_up = "once"
+overlap = "skip"
+
+[notifications]
+on_success = true

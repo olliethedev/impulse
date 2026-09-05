@@ -1,0 +1,18 @@
+# Design sample intended for a project's .impulse/tasks/ directory.
+schema_version = 1
+name = "website-followup"
+cwd = "../.."
+
+[work]
+kind = "agent"
+instructions = """
+Check whether the issue documented in this project's follow-up notes is resolved.
+Use the selected harness's existing tools and permissions, then record the
+assignment's outcome through the supplied Impulse instructions.
+"""
+
+[first_run]
+kind = "after"
+delay = "2h"
+
+# No schedule table: there is no default recurrence.

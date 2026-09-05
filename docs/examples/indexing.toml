@@ -1,0 +1,24 @@
+# Design sample for a future run-impulse.sh beside this definition.
+# Replace this illustrative time with the application's actual initial due time.
+schema_version = 1
+name = "indexing"
+cwd = "."
+
+[work]
+kind = "script"
+command = ["bash", "./run-impulse.sh"]
+
+[first_run]
+kind = "at"
+at = "2026-09-05T09:13:00-04:00"
+
+[schedule]
+kind = "completion"
+after = "24h"
+
+[policy]
+catch_up = "once"
+overlap = "skip"
+
+[notifications]
+on_success = false
