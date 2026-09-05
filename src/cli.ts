@@ -218,4 +218,5 @@ export async function main() {
     if (json) console.log(JSON.stringify(result)); else console.error(`${expected.code}: ${expected.message}`);
   } finally { store?.close(); }
 }
-if (import.meta.main) await main();
+// This is the executable entrypoint. Compiled Windows builds do not reliably set import.meta.main.
+await main();

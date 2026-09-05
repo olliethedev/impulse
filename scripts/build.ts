@@ -6,5 +6,6 @@ const result = await Bun.build({
   entrypoints: ["src/cli.ts"],
   compile: target ? { target: target as Bun.Build.CompileTarget, outfile } : { outfile },
   minify: true,
+  define: { IMPULSE_COMPILED: "true" },
 });
 if (!result.success) throw new AggregateError(result.logs, "Build failed");

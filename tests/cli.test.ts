@@ -92,7 +92,7 @@ test("an interrupted notification attempt becomes inspectable and can be explici
 
 test.skipIf(process.platform === "win32")("graceful cancellation retains capacity until a resistant descendant is explicitly forced", async () => {
   const home = await setup(), harness = join(home, "resistant.ts"), file = join(home, "task.toml"), marker = join(home, "child-alive");
-  const source = `import {writeFileSync} from "node:fs"; process.on("SIGTERM",()=>{}); writeFileSync(${JSON.stringify(marker)},"ready"); setInterval(()=>writeFileSync(${JSON.stringify(marker)},String(Date.now())),50);`;
+  const source = `import {writeFileSync} from "node:fs"; process.on("SIGTERM",()=>{}); process.on("SIGHUP",()=>{}); writeFileSync(${JSON.stringify(marker)},"ready"); setInterval(()=>writeFileSync(${JSON.stringify(marker)},String(Date.now())),50);`;
   writeFileSync(harness, `Bun.spawn([process.execPath,"-e",${JSON.stringify(source)}],{stdout:"ignore",stderr:"ignore"}); setInterval(()=>{},1000);`);
   const settingsFile = join(home, "settings.toml");
   const settings = Bun.TOML.parse(readFileSync(settingsFile, "utf8")) as { harnesses: { fixture: { command: string[] } } };

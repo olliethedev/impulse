@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Engine, type Ticket } from "./engine.ts";
@@ -80,7 +80,7 @@ async function launch(engine: Engine, ticket: Ticket) {
 function childExit(child: ChildProcess): Promise<{ code: number | null; error: string | null }> {
   return new Promise(resolve => {
     child.once("error", error => resolve({ code: null, error: message(error) }));
-    child.once("exit", (code, signal) => resolve({ code, error: signal ? `Exited from ${signal}` : null }));
+    child.once("close", (code, signal) => resolve({ code, error: signal ? `Exited from ${signal}` : null }));
   });
 }
 export async function runner(file: string) {
@@ -146,7 +146,11 @@ export async function runner(file: string) {
     const invocation = process.platform === "win32" && !external ? windowsCommand(command, run.definition.cwd, join(descriptor.paths.launches, `${ticket.id}.process.json`), controlFile, outcomeFile) : command;
     let exit: Promise<ExecutionExit>;
     if (!script && process.platform !== "win32") { terminal = terminalProcess(invocation, run.definition.cwd, env); child = terminal.process; exit = terminal.exited; }
-    else { const spawned = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32", stdio: script ? ["ignore", log!, log!] : "inherit", windowsHide: script }); child = spawned; exit = childExit(spawned); }
+    else {
+      const spawned = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32", stdio: script ? ["ignore", "pipe", "pipe"] : "inherit", windowsHide: script });
+      if (script) { spawned.stdout?.on("data", bytes => writeSync(log!, bytes)); spawned.stderr?.on("data", bytes => writeSync(log!, bytes)); }
+      child = spawned; exit = childExit(spawned);
+    }
     const result = await exit;
     if (server) { try { stopChild(server, false, true); } catch { /* Reconciliation retains uncertainty below if needed. */ } }
     await waitForOwnedGroups();

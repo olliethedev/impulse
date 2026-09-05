@@ -5,8 +5,9 @@ import { ImpulseError } from "./errors.ts";
 import { uptime } from "node:os";
 import type { ClockSample } from "./types.ts";
 
+declare const IMPULSE_COMPILED: boolean | undefined;
 export function selfCommand(): string[] {
-  return Bun.main.includes("$bunfs") ? [process.execPath] : [process.execPath, Bun.main];
+  return typeof IMPULSE_COMPILED !== "undefined" && IMPULSE_COMPILED ? [process.execPath] : [process.execPath, Bun.main];
 }
 export function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 export function powershellQuote(value: string): string { return `'${value.replaceAll("'", "''")}'`; }

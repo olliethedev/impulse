@@ -3,10 +3,9 @@ export interface ExecutionExit { code: number | null; error: string | null }
 export interface TerminalProcess { process: ProcessHandle; exited: Promise<ExecutionExit>; close(): void }
 /** A private PTY supplies a controlling terminal and an owned process group at the same time. */
 export function terminalProcess(command: string[], cwd: string, env: NodeJS.ProcessEnv, output: (data: Uint8Array) => void = data => { process.stdout.write(data); }): TerminalProcess {
-  const terminal = new Bun.Terminal({ cols: process.stdout.columns ?? 80, rows: process.stdout.rows ?? 24, data: (_, bytes) => output(bytes) });
-  let child: Bun.Subprocess;
-  try { child = Bun.spawn(command, { cwd, env, terminal }); }
-  catch (error) { terminal.close(); throw error; }
+  // Bun 1.4.1's inline PTY path performs login_tty; passing an existing Terminal does not.
+  const child = Bun.spawn(command, { cwd, env, terminal: { cols: process.stdout.columns ?? 80, rows: process.stdout.rows ?? 24, data: (_, bytes) => output(bytes) } });
+  const terminal = child.terminal!;
   const input = (bytes: Buffer) => { if (!terminal.closed) terminal.write(bytes); };
   const resize = () => { if (!terminal.closed) terminal.resize(process.stdout.columns ?? 80, process.stdout.rows ?? 24); };
   const raw = process.stdin.isRaw;
