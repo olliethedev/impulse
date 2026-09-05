@@ -5,10 +5,10 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 ## Shared conventions
 
 - Every command supports `--json`. Ordinary JSON mode writes one result to stdout and diagnostics to stderr. Follow operations use newline-delimited JSON events, documented as streaming output.
-- All mutations can run without prompts. Guided setup is a convenience; required input missing from a noninteractive command produces an error.
+- All mutations run without prompts. Setup takes explicit options; required input missing from a command produces an error.
 - Timestamps in structured output use RFC 3339 with a UTC offset. Relative durations accept positive integer `s`, `m`, `h`, or `d` units; `1d` is 24 elapsed hours. Calendar months are not durations.
 - IDs are stable opaque strings, separate from user-facing task names. Examples use readable placeholders such as `run_123` and `agent_456`; they do not specify the ID-generation algorithm.
-- Mutations accept `--request-id KEY` for idempotent retry. Repeating the same key and payload returns the original result; a different payload with that key is a conflict. The key is scoped to the caller/operation and retained with the mutation record.
+- Durable task, config, run, and agent mutations accept `--request-id KEY` for idempotent retry. Repeating the same key and payload returns the original accepted result; a different payload with that key is a conflict. The key is scoped to the caller/operation and retained with the mutation record. Startup and skill management are repeatable OS/filesystem operations; they do not retain request-key receipts.
 - Read-only commands do not start the scheduler. Operator commands that register, update, or execute work start it if needed. Run-scoped callbacks can commit state through the shared local command layer without restarting deliberately stopped dispatch. Stopping an already stopped scheduler is an idempotent no-op.
 
 ## Commands
@@ -21,7 +21,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `daemon start` / `stop` / `status` | Manage dispatch. Stop preserves ongoing runners; run cancellation is separate. |
 | `skill install --harness HARNESS --scope user\|project` | Install the bundled skill into a selected, supported environment. `--dir PATH` supports an explicit other destination. |
 | `skill uninstall --dir PATH` | Remove only a verified Impulse-owned installation. Modified files require an explicit replacement/removal choice. |
-| `doctor` | Inspect selected executable paths, platform support, settings, state access, and scheduler health. A launch test requires a separate explicit flag. |
+| `doctor` | Inspect selected executable paths, platform, settings, state access, and scheduler health. Does not launch an agent. |
 | `task validate FILE` | Validate a definition and references without registration or execution. |
 | `task preview FILE [--at TIMESTAMP]` | Show resolved working directory, schedule, and prospective first occurrences without activating anything. |
 | `task register FILE [--name NAME] [--harness NAME] [--terminal NAME] [--disabled]` | Register a source definition and local execution overrides. Return identity, revision, effective choices, and next time. |
@@ -123,18 +123,19 @@ These controls protect execution bookkeeping and accidental cross-run updates. I
 
 ## Results and exit codes
 
-Example accepted scheduling instruction:
+An accepted scheduling instruction returns the updated task. Relevant fields are shown here; other task fields are omitted:
 
 ```json
 {
   "schema_version": 1,
   "ok": true,
   "data": {
-    "task_id": "task_123",
-    "run_id": "run_123",
+    "id": "task_123",
     "revision": 4,
-    "next_run_at": "2026-09-05T13:13:00Z",
-    "source": "explicit"
+    "next": {
+      "at": "2026-09-05T13:13:00.000Z",
+      "source": "explicit"
+    }
   }
 }
 ```
@@ -147,10 +148,8 @@ Example rejected instruction from an older run:
   "ok": false,
   "error": {
     "code": "CONFIG_CHANGED",
-    "message": "This run started under revision 4; revision 5 is now applied.",
-    "retryable": false,
-    "task_id": "task_123",
-    "run_id": "run_123"
+    "message": "This run uses revision 4; revision 5 is applied",
+    "retryable": false
   }
 }
 ```

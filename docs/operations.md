@@ -22,6 +22,8 @@ desktop = true
 
 Definitions for non-project agent work can live under the configuration directory's `tasks/` folder. Create this folder as needed. Project definitions normally live in `.impulse/tasks/`; script definitions normally sit next to the script.
 
+Commands select an executable and arguments without an implicit shell. For Windows batch files, select `cmd.exe` explicitly and put the shell source in one final argument: `command = ["cmd.exe", "/d", "/c", '"C:\path with spaces\job.cmd" "argument value"']`. Impulse preserves that source for cmd's parser. PowerShell scripts can use an ordinary `powershell.exe -NoProfile -File` argument array.
+
 ## Custom harnesses and terminals
 
 Profiles are local settings. Impulse never interpolates prompts into shell source. The `{launch_file}` placeholder must occupy an entire argument after the executable.

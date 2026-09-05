@@ -69,6 +69,18 @@ test("invalid setup choices do not apply otherwise valid configuration changes",
   expect((await invoke(home, ["config", "show"])).result.data.defaults.harness).toBe("fixture");
 });
 
+test.skipIf(process.platform !== "win32")("Windows batch scripts preserve quoted paths and shell arguments", async () => {
+  const home = await setup(), script = join(home, "script with spaces.cmd"), file = join(home, "task.toml");
+  writeFileSync(script, '@echo off\r\necho %1\r\n');
+  writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "batch", cwd: ".", work: { kind: "script", command: ["cmd.exe", "/d", "/c", `"${script}" "literal & argument"`] }, first_run: { kind: "now" } })!);
+  await invoke(home, ["task", "register", file]);
+  let task;
+  for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "batch"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
+  const log = (await invoke(home, ["run", "logs", task.latest_run.id])).result.data.log;
+  if (task.latest_run.status !== "succeeded") console.error(log);
+  expect(task.latest_run.status).toBe("succeeded"); expect(log).toContain('"literal & argument"');
+}, 20000);
+
 test("an interrupted notification attempt becomes inspectable and can be explicitly retried", async () => {
   const home = await setup(), settingsFile = join(home, "settings.toml"), marker = join(home, "notifier.pid"), file = join(home, "task.toml");
   const settings = Bun.TOML.parse(readFileSync(settingsFile, "utf8")) as { notifications: { desktop: boolean; command?: string[] } };

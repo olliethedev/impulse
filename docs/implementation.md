@@ -7,12 +7,12 @@ The initial documentation commit is the review baseline for this new repository.
 ## Current evidence
 
 - Digest-pinned devcontainer built successfully using Podman; non-root installation and frozen lockfile installation pass with Bun 1.4.1.
-- Typechecking passes. Behavior tests cover persistence after failure, configuration revision fencing, whole-run completion, nested capacity, duplicate tickets/leases, reboot interruption, idempotent receipts, and explicit/unconfirmed outcomes.
+- Typechecking passes. Behavior tests cover persistence after failure, configuration revision fencing, whole-run completion, nested capacity, duplicate tickets/leases, reboot interruption, idempotent receipts, elapsed-clock adjustments, and explicit/unconfirmed outcomes.
 - Executable CLI fixtures pass script callbacks, nested custom harness/terminal launches with special characters, and cancellation after stopping dispatch.
 - The Linux x64 standalone executable builds and validates definitions without a host Bun installation.
-- A native Flatpak Yakuake fixture launched the compiled CLI, reported an explicit agent outcome, and wrote expected evidence. It used a local fixture harness, not a model or indexing submission. The test session was removed afterward.
+- A native Flatpak Yakuake fixture launched the compiled CLI, opened its controlling terminal, verified interactive input, reported an explicit agent outcome, and wrote expected evidence. It used a local fixture harness, not a model or indexing submission. The test session was removed afterward.
 - The installed Codex 0.153.2 started a private app-server Unix socket with isolated configuration; no model work was initiated. Interactive model execution/cancellation remains a separate check.
-- Independent standards/spec review found cancellation, setup validation, notification recovery, and first-run update defects; the fixes and regression evidence are recorded in `review-0.1.md`.
+- Independent standards/spec review found cancellation, setup validation, notification recovery, first-run update, controlling-terminal, and backend-startup cleanup defects; the fixes and regression evidence are recorded in `review-0.1.md`.
 - Native CI is configured for Linux x64/arm64, macOS Intel/Apple Silicon, and Windows x64, including compiled executable smoke tests and checksummed archives. Results will be recorded after it runs.
 
 ## Release limitations under review

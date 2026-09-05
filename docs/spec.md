@@ -57,7 +57,7 @@ These close the remaining interview branches. They are recommendations, not prev
 | P11 | Fresh terminal session for each agent request, labelled with task/request identity, with no requested focus-stealing where supported. | Completed sessions stay open and are not reused automatically. The desktop may still control activation. |
 | P12 | Notification delivery is separate from work success, with durable event records and manual redelivery after a delivery failure. | A broken notification command does not rerun indexing or reclassify successful work. |
 | P13 | GitHub release archives with checksums and a package-manager path; propose an npm launcher package first. | The launcher selects the appropriate standalone binary. Direct binary users need no Node/Bun installation. Exact package naming and publishing remain release work. |
-| P14 | Use the MIT license for the new project, subject to this review. | No license file has been added yet; see the [OSI license text](https://opensource.org/license/mit). |
+| P14 | Use the MIT license for the new project. | The implementation includes the repository's [MIT license](../LICENSE). |
 
 The [CLI and TOML contract](cli-contract.md) and [runtime design](runtime-design.md) contain the proposed details behind these choices, including new flags, persistence rules, and platform validation work.
 
@@ -69,7 +69,7 @@ The proposed onboarding command is:
 impulse setup --harness codex --terminal yakuake --startup enable --skill codex --non-interactive
 ```
 
-Omitting startup or skill options leaves those settings unchanged. Guided setup is also available. Custom harness/terminal profiles belong in local settings; portable task definitions contain the work and scheduling rules.
+Omitting startup or skill options leaves those settings unchanged. Initial setup uses explicit options; an interactive guided flow remains a possible convenience. Custom harness/terminal profiles belong in local settings; portable task definitions contain the work and scheduling rules.
 
 Example definitions:
 
@@ -88,7 +88,7 @@ impulse task next indexing --after 24h --json
 impulse task disable indexing --json
 ```
 
-Registration output includes the task ID, applied revision, effective next time, and whether the scheduler started. Update output shows the old and new revision and next time. A validation/preview operation performs no registration or execution.
+Registration and update output include the applied task identity, revision, effective profile, and next time. Use `daemon status` to inspect dispatch after registration. A validation/preview operation performs no registration or execution.
 
 ## Indexing migration walkthrough
 
