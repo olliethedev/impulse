@@ -61,3 +61,50 @@ test("stopping dispatch preserves the runner and explicit run cancellation termi
   const waited = await invoke(home, ["run", "wait", runId]); expect(waited.code).toBe(12); expect(waited.result.data.status).toBe("cancelled");
   expect((await invoke(home, ["task", "show", "long"])).result.data.enabled).toBe(true);
 }, 20000);
+
+test("invalid setup choices do not apply otherwise valid configuration changes", async () => {
+  const home = await setup();
+  expect((await invoke(home, ["setup", "--harness", "claude-code", "--startup", "invalid"])).code).toBe(2);
+  expect((await invoke(home, ["config", "show"])).result.data.defaults.harness).toBe("fixture");
+});
+
+test("an interrupted notification attempt becomes inspectable and can be explicitly retried", async () => {
+  const home = await setup(), settingsFile = join(home, "settings.toml"), marker = join(home, "notifier.pid"), file = join(home, "task.toml");
+  const settings = Bun.TOML.parse(readFileSync(settingsFile, "utf8")) as { notifications: { desktop: boolean; command?: string[] } };
+  settings.notifications.command = [process.execPath, "-e", `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(marker)},String(process.pid)); await Bun.sleep(10000);`];
+  writeFileSync(settingsFile, Bun.TOML.stringify(settings)!); await invoke(home, ["config", "apply", settingsFile]);
+  writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "notify", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(7)"] }, first_run: { kind: "now" } })!);
+  await invoke(home, ["task", "register", file]);
+  let notifier = 0;
+  for (let i = 0; i < 150; i++) { try { notifier = Number(readFileSync(marker, "utf8")); if (notifier) break; } catch {} await Bun.sleep(100); }
+  expect(notifier).toBeGreaterThan(0);
+  const lease = (await invoke(home, ["daemon", "status"])).result.data;
+  process.kill(lease.pid, "SIGKILL"); process.kill(notifier, "SIGKILL");
+  await invoke(home, ["daemon", "start"]);
+  let notification;
+  for (let i = 0; i < 50; i++) { notification = (await invoke(home, ["notification", "list"])).result.data[0]; if (notification.status === "failed") break; await Bun.sleep(100); }
+  expect(notification.status).toBe("failed"); expect(notification.error).toContain("may already have reached");
+  settings.notifications.command = [process.execPath, "-e", "process.exit(0)"];
+  writeFileSync(settingsFile, Bun.TOML.stringify(settings)!); await invoke(home, ["config", "apply", settingsFile]);
+  expect((await invoke(home, ["notification", "retry", notification.id])).result.data.status).toBe("delivered");
+}, 30000);
+
+test.skipIf(process.platform === "win32")("graceful cancellation retains capacity until a resistant descendant is explicitly forced", async () => {
+  const home = await setup(), harness = join(home, "resistant.ts"), file = join(home, "task.toml"), marker = join(home, "child-alive");
+  const source = `import {writeFileSync} from "node:fs"; process.on("SIGTERM",()=>{}); writeFileSync(${JSON.stringify(marker)},"ready"); setInterval(()=>writeFileSync(${JSON.stringify(marker)},String(Date.now())),50);`;
+  writeFileSync(harness, `Bun.spawn([process.execPath,"-e",${JSON.stringify(source)}],{stdout:"ignore",stderr:"ignore"}); setInterval(()=>{},1000);`);
+  const settingsFile = join(home, "settings.toml");
+  const settings = Bun.TOML.parse(readFileSync(settingsFile, "utf8")) as { harnesses: { fixture: { command: string[] } } };
+  settings.harnesses.fixture.command = [process.execPath, harness, "{launch_file}"];
+  writeFileSync(settingsFile, Bun.TOML.stringify(settings)!); await invoke(home, ["config", "apply", settingsFile]);
+  writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "resistant", cwd: ".", work: { kind: "agent", instructions: "fixture" }, first_run: { kind: "now" } })!);
+  await invoke(home, ["task", "register", file]);
+  let runId = "";
+  try {
+    for (let i = 0; i < 100; i++) { const task = (await invoke(home, ["task", "show", "resistant"])).result.data; runId = task.latest_run?.id ?? ""; try { if (readFileSync(marker, "utf8")) break; } catch {} await Bun.sleep(100); }
+    await invoke(home, ["run", "stop", runId]); await Bun.sleep(800);
+    expect((await invoke(home, ["run", "show", runId])).result.data.status).toBe("stopping");
+    expect((await invoke(home, ["doctor"])).result.data.capacity.used).toBe(1);
+  } finally { if (runId) await invoke(home, ["run", "stop", runId, "--force"]); }
+  expect((await invoke(home, ["run", "wait", runId])).result.data.status).toBe("cancelled");
+}, 20000);

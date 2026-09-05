@@ -95,3 +95,33 @@ test("an agent exit without a report is unconfirmed; reporting does not depend o
   f.engine.resolve(ticket.id, "succeeded", "I verified the completed changes");
   expect(f.engine.run(run.id).status).toBe("succeeded");
 });
+
+test("updating before the first calendar execution chooses an occurrence after the update", () => {
+  const f = setup(), loaded = f.definition('[schedule]\nkind="calendar"\ncron="0 13 * * *"\ntimezone="UTC"');
+  loaded.definition.first_run = { kind: "schedule" };
+  const task = f.engine.register(loaded); f.advance(2 * 3600000);
+  expect(new Date(f.engine.update(task.id, loaded).next!.at).toISOString()).toBe("2026-09-05T13:00:00.000Z");
+  loaded.definition.first_run = { kind: "now" };
+  expect(f.engine.update(task.id, loaded).next?.at).toBe(f.now());
+  loaded.definition.first_run = { kind: "at", at: "2026-09-04T13:00:00Z" };
+  expect(() => f.engine.update(task.id, loaded)).toThrow("future");
+});
+
+test("elapsed waits preserve their remaining duration across a wall-clock adjustment", () => {
+  const f = setup(); let elapsed = 100000;
+  const engine = new Engine(f.store, f.now, () => ({ boot_id: "boot", at: elapsed }));
+  const task = engine.register(f.definition());
+  engine.next(task.id, engine.after("24h"));
+  elapsed += 3600000; f.advance(7200000);
+  engine.tick("scheduler", engine.lease()!.generation, "boot");
+  expect(engine.task(task.id).next!.at - f.now()).toBe(23 * 3600000);
+});
+
+test("reboot interrupts queued descendants of an interrupted run instead of launching them", () => {
+  const f = setup(); f.engine.register(f.definition());
+  const ticket = f.tick()[0]!, run = f.engine.claim(ticket, "script", 42, "boot");
+  const child = f.engine.request(run.context, "Pending child");
+  f.engine.reconcile("new-boot", () => false);
+  expect(f.engine.agent(child.id).status).toBe("interrupted");
+  expect(f.engine.run(run.id).status).toBe("interrupted");
+});

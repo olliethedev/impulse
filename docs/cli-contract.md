@@ -36,6 +36,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `run wait RUN` | Wait for a terminal execution state. Interrupting the waiting CLI does not cancel the run. |
 | `run logs RUN\|--current [--follow]` | Read Impulse-owned logs. `--follow --json` streams events. |
 | `run stop RUN [--force]` | Commit cancellation intent and request termination of all owned work. Return the current stopping/cancelled state; `run wait` can wait for actual termination. |
+| `run confirm-ended RUN --reason TEXT` | An operator confirms that uncertain/stopping execution and its external work have ended. Requires dead runners; records interruption or unconfirmed work, never success. |
 | `agent request --instructions TEXT\|--instructions-file FILE [--no-wait]` | Request an agent within the current run. Wait for its reported outcome by default. |
 | `agent show ID` / `agent wait ID` | Inspect or wait for a previously requested agent. |
 | `agent finish --outcome success\|failed --summary TEXT` | The current agent submits its own explicit outcome. |

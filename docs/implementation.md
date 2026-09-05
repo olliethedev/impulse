@@ -10,10 +10,13 @@ The initial documentation commit is the review baseline for this new repository.
 - Typechecking passes. Behavior tests cover persistence after failure, configuration revision fencing, whole-run completion, nested capacity, duplicate tickets/leases, reboot interruption, idempotent receipts, and explicit/unconfirmed outcomes.
 - Executable CLI fixtures pass script callbacks, nested custom harness/terminal launches with special characters, and cancellation after stopping dispatch.
 - The Linux x64 standalone executable builds and validates definitions without a host Bun installation.
+- A native Flatpak Yakuake fixture launched the compiled CLI, reported an explicit agent outcome, and wrote expected evidence. It used a local fixture harness, not a model or indexing submission. The test session was removed afterward.
+- The installed Codex 0.153.2 started a private app-server Unix socket with isolated configuration; no model work was initiated. Interactive model execution/cancellation remains a separate check.
+- Independent standards/spec review found cancellation, setup validation, notification recovery, and first-run update defects; the fixes and regression evidence are recorded in `review-0.1.md`.
 - Native CI is configured for Linux x64/arm64, macOS Intel/Apple Silicon, and Windows x64, including compiled executable smoke tests and checksummed archives. Results will be recorded after it runs.
 
 ## Release limitations under review
 
-This is 0.1.0 development work, not a validated v1 release. Interactive terminal/login/notification checks on macOS and Windows remain separate from hosted CI. Shared-daemon Codex on Windows needs an observable custom wrapper; POSIX Codex uses a private backend where supported. macOS manual clock changes currently use persisted wall deadlines rather than an independent clock that includes suspend. Ambiguous liveness remains held for investigation; it is never silently retried. No live indexing migration has occurred.
+This is 0.1.0 development work, not a validated v1 release. Interactive terminal/login/notification checks on macOS and Windows remain separate from hosted CI. Shared-daemon Codex on Windows needs an observable custom wrapper; POSIX Codex uses a private backend where supported. The macOS elapsed-clock adapter uses Bun's experimental FFI for one scalar libSystem call and requires native compiled-binary evidence. Ambiguous liveness remains held for investigation; it is never silently retried. No live indexing migration has occurred.
 
 Package-manager publication, signing/notarization, and a public release are not part of committing the implementation. The repository's visibility remains unchanged.

@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { Engine } from "./engine.ts";
 import { duration } from "./schedule.ts";
 import { message, requireThat } from "./errors.ts";
-import { powershell } from "./platform.ts";
+import { alive, bootId, powershell } from "./platform.ts";
 import type { Notification } from "./types.ts";
 
 async function send(command: string[], input: string): Promise<void> {
@@ -19,11 +19,12 @@ async function send(command: string[], input: string): Promise<void> {
   });
 }
 export async function deliverPending(engine: Engine) {
+  reconcileDeliveries(engine);
   for (const pending of engine.store.all("notifications").filter(n => n.status === "pending")) {
     const notification = engine.store.atomic(() => {
       const n = engine.store.get("notifications", pending.id)!;
       if (n.status !== "pending") return null;
-      n.status = "delivering"; engine.store.put("notifications", n); return n;
+      n.status = "delivering"; n.delivery = { pid: process.pid, boot_id: bootId(), owner: engine.lease()?.pid === process.pid ? engine.lease()!.owner : null }; engine.store.put("notifications", n); return n;
     });
     if (!notification) continue;
     try {
@@ -44,7 +45,17 @@ export async function deliverPending(engine: Engine) {
     engine.store.atomic(() => engine.store.put("notifications", notification));
   }
 }
+export function reconcileDeliveries(engine: Engine) {
+  engine.store.atomic(() => {
+    for (const n of engine.store.all("notifications").filter(n => n.status === "delivering")) {
+      if (!n.delivery || n.delivery.boot_id !== bootId() || !alive(n.delivery.pid) || (n.delivery.owner && n.delivery.owner !== engine.lease()?.owner)) {
+        n.status = "failed"; n.error = "Delivery was interrupted and may already have reached its destination. Explicit retry may duplicate it."; engine.store.put("notifications", n);
+      }
+    }
+  });
+}
 export function retryNotification(engine: Engine, id: string): Notification {
+  reconcileDeliveries(engine);
   return engine.store.atomic(() => {
     const n = engine.store.get("notifications", id); requireThat(n, "NOT_FOUND", "Notification not found", 3);
     requireThat(n.status !== "delivering", "DELIVERY_ACTIVE", "Notification delivery is active", 4);
@@ -67,6 +78,9 @@ export function prune(engine: Engine, taskRef?: string, apply = false) {
       if (history) {
         for (const id of [run.id, ...engine.agents(run.id).map(a => a.id)]) {
           files.push(join(engine.store.paths.contexts, `${id}.json`), join(engine.store.paths.launches, `${id}.json`));
+          files.push(join(engine.store.paths.launches, `${id}.process.json`), join(engine.store.paths.launches, `${id}.control.json`));
+          files.push(join(engine.store.paths.launches, `${id}.process-outcome.json`));
+          files.push(join(engine.store.paths.launches, `${id}.instructions.md`));
         }
       }
       const existing = files.filter(existsSync), bytes = existing.reduce((sum, file) => sum + statSync(file).size, 0);

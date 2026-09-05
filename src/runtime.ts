@@ -6,9 +6,10 @@ import { Engine, type Ticket } from "./engine.ts";
 import { Store } from "./store.ts";
 import { paths, type Paths } from "./paths.ts";
 import { ImpulseError, message } from "./errors.ts";
-import { alive, bootId, detach, elapsedClock, privateJson, selfCommand, stopChild } from "./platform.ts";
+import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, selfCommand, stopChild } from "./platform.ts";
 import { assignmentInstructions, launchTerminal, substitute, type LaunchDescriptor } from "./adapters.ts";
 import { deliverPending, prune } from "./maintenance.ts";
+import { windowsCommand } from "./windows.ts";
 
 export async function startDaemon(engine: Engine) {
   const current = engine.lease();
@@ -67,6 +68,10 @@ async function launch(engine: Engine, ticket: Ticket) {
   privateJson(contextFile, { ...context, paths: p });
   const file = join(p.launches, `${ticket.id}.json`);
   const descriptor: LaunchDescriptor = { schema_version: 1, ticket, paths: p, context_file: contextFile, profile: run.profile, runner: { command: [...selfCommand(), "_runner", file], cwd: run.definition.cwd }, keep_open: ticket.kind === "agent", ...(agent ? { instructions: assignmentInstructions(agent.instructions, contextFile, selfCommand()) } : {}) };
+  if (agent) {
+    descriptor.instructions_file = join(p.launches, `${ticket.id}.instructions.md`);
+    writeFileSync(descriptor.instructions_file, descriptor.instructions!, { mode: 0o600 });
+  }
   privateJson(file, descriptor);
   if (agent) await launchTerminal(descriptor, file);
   else await detach(descriptor.runner.command);
@@ -88,6 +93,7 @@ export async function runner(file: string) {
     const env = { ...process.env, IMPULSE_CONTEXT: descriptor.context_file, IMPULSE_TASK_ID: context.task_id, IMPULSE_RUN_ID: context.run_id, ...(context.agent_id ? { IMPULSE_AGENT_ID: context.agent_id } : {}) };
     delete env.IMPULSE_AGENT_ID; if (context.agent_id) env.IMPULSE_AGENT_ID = context.agent_id;
     const script = ticket.kind === "script";
+    const initialPrompt = `Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}. Follow them to complete this Impulse assignment and report its explicit outcome using the supplied CLI context.`;
     let command: string[], external = false;
     if (script) {
       if (run.definition.work.kind !== "script") throw new Error("Script ticket has agent definition");
@@ -95,7 +101,7 @@ export async function runner(file: string) {
     } else if (descriptor.profile.harness_profile) {
       command = substitute(descriptor.profile.harness_profile.command, file);
       external = descriptor.profile.harness_profile.lifecycle === "external";
-    } else if (descriptor.profile.harness === "claude-code") command = ["claude", descriptor.instructions!];
+    } else if (descriptor.profile.harness === "claude-code") command = ["claude", initialPrompt];
     else {
       const help = Bun.spawnSync(["codex", "--help"], { stdout: "pipe", stderr: "pipe" });
       if (help.exitCode !== 0) throw new Error("Codex is unavailable; run impulse doctor");
@@ -108,13 +114,16 @@ export async function runner(file: string) {
         server.on("error", error => { serverError = message(error); });
         for (let i = 0; i < 150 && !existsSync(socket) && !serverError && server.exitCode === null; i++) await Bun.sleep(100);
         if (!existsSync(socket)) throw new Error(serverError ?? "Private Codex backend did not start");
-        command = ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, descriptor.instructions!];
+        command = ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, initialPrompt];
       } else {
-        command = ["codex", "--cd", run.definition.cwd, descriptor.instructions!];
+        command = ["codex", "--cd", run.definition.cwd, initialPrompt];
         external = help.stdout.toString().includes("shared local app-server");
       }
     }
-    child = spawn(command[0]!, command.slice(1), { cwd: run.definition.cwd, env, detached: script || process.platform === "win32", stdio: script ? ["ignore", log!, log!] : "inherit", windowsHide: script });
+    const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
+    const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
+    const invocation = process.platform === "win32" && !external ? windowsCommand(command, run.definition.cwd, join(descriptor.paths.launches, `${ticket.id}.process.json`), controlFile, outcomeFile) : command;
+    child = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32" || script, stdio: script ? ["ignore", log!, log!] : "inherit", windowsHide: script });
     const exit = childExit(child);
     let sentGrace = false, sentForce = false;
     heartbeat = setInterval(() => {
@@ -122,13 +131,26 @@ export async function runner(file: string) {
         const state = engine.heartbeat(ticket, nonce);
         if (state.cancel && !state.done && (!sentGrace || (state.force && !sentForce))) {
           // For shared external execution a process signal is not evidence of assignment termination.
-          if (!external) { stopChild(server ?? child!, state.force, !!server || script || process.platform === "win32"); if (server) stopChild(child!, state.force, false); }
+          if (!external) {
+            if (process.platform === "win32") privateJson(controlFile, { force: state.force });
+            else { stopChild(server ?? child!, state.force, true); if (server) stopChild(child!, state.force, true); }
+          }
           sentGrace = true; sentForce ||= state.force;
         }
       } catch (error) { console.error(`Impulse runner: ${message(error)}`); }
     }, 500);
     const result = await exit;
     if (server) { try { stopChild(server, false, true); } catch { /* Reconciliation retains uncertainty below if needed. */ } }
+    if (!external && process.platform !== "win32") {
+      while ((child.pid && groupAlive(child.pid)) || (server?.pid && groupAlive(server.pid))) await Bun.sleep(200);
+    }
+    if (process.platform === "win32" && !external) {
+      try {
+        const proof = JSON.parse(readFileSync(outcomeFile, "utf8").replace(/^\uFEFF/, ""));
+        if (typeof proof.exit_code === "number" || typeof proof.launch_error === "string") { result.code = proof.exit_code; result.error = proof.launch_error ?? null; }
+        else external = true;
+      } catch { external = true; }
+    }
     engine.ended(ticket, nonce, result.code, result.error, external);
   } catch (error) {
     try { engine.ended(ticket, nonce, null, message(error)); } catch { /* A duplicate ticket must not mutate its original runner. */ }

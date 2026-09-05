@@ -62,6 +62,7 @@ export class Engine {
     return this.store.atomic(() => {
       const task = this.task(reference);
       requireThat(!task.removed, "NOT_FOUND", "Task is unregistered", 3);
+      if (loaded.definition.first_run.kind === "at" && (task.definition.first_run.kind !== "at" || loaded.definition.first_run.at !== task.definition.first_run.at)) timestamp(loaded.definition.first_run.at, this.now());
       requireThat(!this.tasks().some(t => t.id !== task.id && t.source === loaded.path), "SOURCE_CONFLICT", "Source is already registered", 4);
       for (const key of ["harness", "terminal"] as const) {
         if (changes[key] === null) delete task.overrides[key];
@@ -87,7 +88,10 @@ export class Engine {
   private recompute(task: Task) {
     const schedule = task.definition.schedule;
     task.zone = zone(schedule);
-    if (task.last_run === null) { task.next = this.initial(task); return; }
+    if (task.last_run === null) {
+      task.next = ["now", "schedule"].includes(task.definition.first_run.kind) ? firstDue(task.definition, this.now()) : this.initial(task);
+      return;
+    }
     if (schedule?.kind === "calendar") task.next = nextCalendar(schedule, this.now(), task.definition.policy.catch_up);
     else if (schedule?.kind === "completion") {
       const last = this.run(task.last_run);
@@ -224,6 +228,20 @@ export class Engine {
       this.store.put("runs", run); this.event(run.task_id, run.id, "cancellation_requested", { force }); this.settle(run.id); return this.run(run.id);
     });
   }
+  confirmEnded(runId: string, reason: string, isAlive: (pid: number) => boolean): Run {
+    return this.store.atomic(() => {
+      const run = this.run(runId), components = [...this.agents(run.id), ...(run.script ? [run.script] : [])].filter(c => active(c.status));
+      requireThat(components.length > 0 && components.every(c => ["uncertain", "stopping"].includes(c.status)), "NOT_UNCERTAIN", "Only uncertain or stopping execution can be confirmed ended", 4);
+      requireThat(components.every(c => !c.pid || !isAlive(c.pid)), "RUNNER_ALIVE", "A runner is still alive; close its assignment session before confirming external termination", 4);
+      requireThat(reason.trim(), "REASON_REQUIRED", "State how you verified all owned execution has ended");
+      for (const component of components) {
+        component.status = run.cancel ? "cancelled" : "id" in component ? "unconfirmed" : "interrupted";
+        component.ended_at = this.now();
+        if ("id" in component) this.store.put("agents", component as Agent); else run.script = component;
+      }
+      this.store.put("runs", run); this.event(run.task_id, run.id, "operator_confirmed_ended", { reason }); this.settle(run.id); return this.run(run.id);
+    });
+  }
   private settle(runId: string) {
     const run = this.run(runId), agents = this.agents(runId), components = [...agents, ...(run.script ? [run.script] : [])];
     if (components.some(c => active(c.status))) {
@@ -242,7 +260,7 @@ export class Engine {
     const clock = this.clock(); if (clock) { run.finished_clock = clock; this.store.put("runs", run); }
     const task = this.task(run.task_id), schedule = task.definition.schedule;
     if (task.last_run === run.id) {
-      if (outcome === "succeeded" && schedule?.kind === "completion" && task.next?.source !== "explicit") task.next = this.relative(this.now() + duration(schedule.after), "completion");
+      if (outcome === "succeeded" && schedule?.kind === "completion" && task.next?.source !== "explicit") task.next = this.relative(run.finished_at + duration(schedule.after), "completion");
       if (outcome === "interrupted") {
         task.hold = task.definition.policy.hold_after_interruption;
         const retry = task.definition.policy.interruption_retry;

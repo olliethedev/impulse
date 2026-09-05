@@ -10,6 +10,7 @@ export interface LaunchDescriptor {
   paths: import("./paths.ts").Paths;
   runner: { command: string[]; cwd: string };
   instructions?: string;
+  instructions_file?: string;
   context_file: string;
   profile: ExecutionProfile;
   keep_open: boolean;
@@ -42,7 +43,9 @@ export async function launchTerminal(descriptor: LaunchDescriptor, file: string)
       const terminal = terminals.split(",")[0]!.trim();
       if (!/^\d+$/.test(session) || !/^\d+$/.test(terminal)) throw new Error("Yakuake returned an invalid session identity");
       runCommand([...base, "/yakuake/tabs", "org.kde.yakuake.setTabTitle", session, title]);
-      const hostCommand = flatpak ? ["flatpak-spawn", "--host", "--watch-bus", ...command] : command;
+      const invocation = command.map(shellQuote).join(" ");
+      // A Flatpak terminal profile can itself start a host shell. Check where this shell executes.
+      const hostCommand = flatpak ? ["sh", "-c", `if test -f /.flatpak-info; then exec flatpak-spawn --host --watch-bus ${invocation}; else exec ${invocation}; fi`] : command;
       runCommand([...base, "/yakuake/sessions", "org.kde.yakuake.runCommandInTerminal", terminal, hostCommand.map(shellQuote).join(" ")]); return;
     }
     case "terminal-app": {

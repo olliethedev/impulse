@@ -57,5 +57,6 @@ export interface Agent extends Execution {
 }
 export interface Event { id: string; run_id: string | null; task_id: string; type: string; at: number; detail: unknown }
 export interface Notification { id: string; run_id: string; task_id: string; task_name: string; outcome: Outcome;
-  summary: string; at: number; status: "pending" | "delivering" | "delivered" | "failed"; error: string | null }
+  summary: string; at: number; status: "pending" | "delivering" | "delivered" | "failed"; error: string | null;
+  delivery?: { pid: number; boot_id: string; owner: string | null } }
 export interface Lease { owner: string; generation: number; until: number; pid: number; boot_id: string; enabled: boolean; tick: number }

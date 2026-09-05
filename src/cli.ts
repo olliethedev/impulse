@@ -34,6 +34,7 @@ Usage: impulse <group> <command> [arguments] [options]
   task run TASK [--reset-next]
   run list [--task TASK] | show RUN | wait RUN | logs RUN [--follow]
   run stop RUN [--force]                 (does not disable future runs)
+  run confirm-ended RUN --reason TEXT   (operator verification of uncertain work)
   agent request --instructions TEXT | --instructions-file FILE [--no-wait]
   agent show ID | wait ID
   agent finish --outcome success|failed --summary TEXT
@@ -101,14 +102,16 @@ export async function main() {
     if (group === "setup") {
       allow("harness", "terminal", "startup", "skill", "non-interactive");
       requireThat(!command, "INVALID_ARGUMENT", "Setup accepts options only");
+      if (option("startup")) requireThat(required("startup") === "enable", "INVALID_OPTION", "Setup --startup accepts enable");
+      const skillDir = option("skill") ? skillDirectory(required("skill"), "user") : undefined;
       const settings = engine.settings();
       if (option("harness")) settings.defaults.harness = required("harness");
       if (option("terminal")) settings.defaults.terminal = required("terminal");
       const validated = parseSettings(Bun.TOML.stringify(settings)!);
       result = mutate(() => engine.applySettings(validated), validated);
       writeFileSync(join(p.config, "settings.toml"), Bun.TOML.stringify(validated)!, { mode: 0o600 });
-      if (option("startup")) { requireThat(required("startup") === "enable", "INVALID_OPTION", "Setup --startup accepts enable"); startup(p, true); await startDaemon(engine); }
-      if (option("skill")) installSkill(skillDirectory(required("skill"), "user"));
+      if (option("startup")) { startup(p, true); await startDaemon(engine); }
+      if (skillDir) installSkill(skillDir);
     } else if (group === "config") {
       allow();
       if (command === "show") result = engine.settings();
@@ -166,6 +169,7 @@ export async function main() {
       else if (command === "show") { allow("current"); const id = currentRun(); result = { ...engine.run(id), agents: engine.agents(id), events: engine.events(id) }; }
       else if (command === "wait") { allow(); result = await waitFor(engine, "run", needArg()); }
       else if (command === "stop") { allow("force"); result = mutate(() => engine.stop(needArg(), !!values.force)); }
+      else if (command === "confirm-ended") { allow("reason"); requireThat(!context, "OPERATOR_REQUIRED", "Confirmation is an operator command; unset the run context", 4); result = mutate(() => engine.confirmEnded(needArg(), required("reason"), alive)); }
       else if (command === "logs") {
         allow("current", "follow"); const id = currentRun(); engine.run(id); const file = join(p.logs, `${id}.log`);
         if (!values.follow) result = { run_id: id, log: existsSync(file) ? readFileSync(file, "utf8") : "", events: engine.events(id) };
