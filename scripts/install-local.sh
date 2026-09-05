@@ -31,19 +31,34 @@ if [[ "$("$engine" info --format '{{.Host.Security.Rootless}}' 2>/dev/null || tr
 # Verify skill ownership before stopping dispatch or replacing the installed executable.
 "$repo/dist/impulse" skill install --harness "$harness" --scope user --json
 
-restart=false
-if [[ -x "$destination" ]]; then
-  restart="$("$destination" daemon status --json | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["data"]["running"]).lower())')"
-  if [[ "$restart" == true ]]; then "$destination" daemon stop --json; fi
-fi
+# Prepare and validate the replacement while the old scheduler is still running.
 mkdir -p "$(dirname "$destination")"
 temporary="$(mktemp "$(dirname "$destination")/.impulse-install.XXXXXX")"
-trap 'rm -f -- "$temporary"' EXIT
+restart=false
+restore_dispatch=false
+cleanup() {
+  local status=$?
+  rm -f -- "$temporary"
+  if [[ "$restore_dispatch" == true ]]; then
+    # On a failed atomic replacement, destination still contains the old executable.
+    "$destination" daemon start --json || printf 'Could not restore dispatch; run impulse daemon start.\n' >&2
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 cp -- "$repo/dist/impulse" "$temporary"
 chmod 755 "$temporary"
 "$temporary" --version --json
+if [[ -x "$destination" ]]; then
+  restart="$("$destination" daemon status --json | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["data"]["running"]).lower())')"
+  if [[ "$restart" == true ]]; then
+    restore_dispatch=true
+    "$destination" daemon stop --json
+  fi
+fi
 mv -f -- "$temporary" "$destination"
 if [[ "$restart" == true ]]; then "$destination" daemon start --json; fi
+restore_dispatch=false
 python3 - "$repo" "$destination" "$harness" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
 repo,destination,harness=sys.argv[1:]

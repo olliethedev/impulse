@@ -125,3 +125,17 @@ test("reboot interrupts queued descendants of an interrupted run instead of laun
   expect(f.engine.agent(child.id).status).toBe("interrupted");
   expect(f.engine.run(run.id).status).toBe("interrupted");
 });
+
+test("an external harness exit alerts once while its run remains uncertain", () => {
+  const f = setup(); f.engine.register(f.definition("", '[work]\nkind="agent"\ninstructions="Check"'));
+  const ticket = f.tick()[0]!, run = f.engine.claim(ticket, "agent", 43, "boot");
+  f.engine.ended(ticket, "agent", 0, null, true);
+  expect(f.engine.run(run.id).status).toBe("uncertain");
+  expect(f.engine.run(run.id).finished_at).toBeNull();
+  expect(f.engine.capacity().used).toBe(1);
+  expect(f.store.all("notifications")).toHaveLength(1);
+  expect(f.store.all("notifications")[0]!.outcome).toBe("unconfirmed");
+  f.engine.ended(ticket, "agent", 0, null, true);
+  f.advance(40000); f.engine.reconcile("boot", () => false);
+  expect(f.store.all("notifications")).toHaveLength(1);
+});

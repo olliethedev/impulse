@@ -371,7 +371,10 @@ export class Engine {
       requireThat(execution?.runner_nonce === nonce, "RUNNER_CHANGED", "Runner identity mismatch", 4);
       if (!active(execution.status)) return;
       execution.exit_code = exitCode; execution.error = error;
-      if (external) execution.status = "uncertain";
+      if (external) {
+        if (execution.status !== "uncertain") this.executionUncertain(run, ticket.id);
+        execution.status = "uncertain";
+      }
       else { execution.status = run.cancel ? "cancelled" : ticket.kind === "script" ? exitCode === 0 && !error ? "succeeded" : "failed" : error ? "failed" : "unconfirmed"; execution.ended_at = this.now(); }
       if (ticket.kind === "agent") this.store.put("agents", execution as Agent); else { run.script = execution; this.store.put("runs", run); }
       this.event(run.task_id, run.id, "execution_ended", { id: ticket.id, status: execution.status, exit_code: exitCode, error }); this.settle(run.id);
@@ -386,6 +389,13 @@ export class Engine {
       this.event(run.task_id, run.id, "launch_failed", { id: ticket.id, error }); this.settle(run.id);
     });
   }
+  private executionUncertain(run: Run, component: string) {
+    this.event(run.task_id, run.id, "execution_uncertain", { component });
+    if (run.definition.notifications.on_interruption) {
+      const task = this.task(run.task_id);
+      this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id, outcome: "unconfirmed", summary: "Execution liveness is uncertain. Automatic replacement is held; inspect the run before resolving it.", at: this.now(), status: "pending", error: null });
+    }
+  }
   reconcile(bootId: string, alive: (pid: number) => boolean) {
     this.store.atomic(() => {
       for (const run of this.runs().filter(r => active(r.status))) {
@@ -397,13 +407,8 @@ export class Engine {
           if (rebooted) { component.status = run.cancel ? "cancelled" : "interrupted"; component.ended_at = this.now(); }
           else if (component.status === "queued" || component.launch_at === null) continue;
           else if ((component.pid && !alive(component.pid) && this.now() - (component.heartbeat ?? component.launch_at) > 15000) || (!component.pid && this.now() - component.launch_at > 30000)) component.status = "uncertain";
-          if (component.status === "uncertain" && previousStatus !== "uncertain") {
-            this.event(run.task_id, run.id, "execution_uncertain", { component: "id" in component ? component.id : run.id });
-            if (run.definition.notifications.on_interruption) {
-              const task = this.task(run.task_id);
-              this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id, outcome: "unconfirmed", summary: "Execution liveness is uncertain. Automatic replacement is held; inspect the run before resolving it.", at: this.now(), status: "pending", error: null });
-            }
-          }
+          if (component.status === "uncertain" && previousStatus !== "uncertain")
+            this.executionUncertain(run, "id" in component ? (component as Agent).id : run.id);
           if ("id" in component) this.store.put("agents", component as Agent); else run.script = component;
         }
         this.store.put("runs", run); this.settle(run.id);
