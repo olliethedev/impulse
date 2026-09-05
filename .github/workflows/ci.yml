@@ -28,6 +28,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun scripts/smoke-binary.ts
+      - if: runner.os == 'Linux'
+        run: python3 tests/test-install-local.py
       - run: bun scripts/package.ts
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

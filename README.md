@@ -22,7 +22,7 @@ impulse setup --harness codex --terminal yakuake --non-interactive
 impulse doctor
 ```
 
-Built-in harnesses: `codex`, `claude-code`. Built-in terminals: `yakuake`, `konsole`, `terminal-app`, `windows-terminal`. Custom profiles support other setups through ordinary executable argument arrays. Impulse uses the harness's existing login, tools, MCP configuration, and permissions.
+Built-in harnesses: `codex`, `claude-code`. Built-in terminals: `yakuake`, `konsole`, `terminal-app`, `windows-terminal`. Custom profiles support other setups through ordinary executable argument arrays. Impulse uses the harness's existing login, tools, MCP configuration, and permissions. Before scheduling unattended work in a new project, open your harness there once and complete its login and project-trust setup; an interactive first-use prompt otherwise waits in the task's terminal.
 
 ## Schedule a script
 
