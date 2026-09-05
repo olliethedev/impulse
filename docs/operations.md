@@ -76,6 +76,8 @@ Notifications are durable events separate from work outcomes. Failures and inter
 
 ## Indexing migration
 
-The existing indexing system has not been migrated or executed by the implementation. Preserve its ledger, quota gate, and gate-derived request-window identity during migration. First exercise an Impulse wrapper against copied fixture state. Translate successful submission timing with `task next --after 24h`, and treat an expected quota pause as a schedule change rather than a failure.
+The reference desktop's Google indexing automation is now registered as a local Impulse script task. Its application-specific coordinator, recovery prompt, ledger, and browser profile stay outside the OSS repository. The accepted migration contract and validation boundaries are in [indexing-migration.md](indexing-migration.md).
 
-Only switch ownership after validating the wrapper's browser cleanup, exit handling, and agent instructions. Disable the old timer before enabling the corresponding Impulse task so there is one scheduler. Keep rollback steps and the original timer definition. Do not submit to Google as part of development tests.
+The coordinator reserves attempts before requesting indexing, treats quota pauses as expected completion, and requests one agent for unexpected failures. Normal recurrence begins 24 hours after the whole run succeeds, including any recovery agent. Unresolved repair disables the task, saves intervention instructions, and requests a persistent critical notification through a local delivery adapter. An uncertain agent produces a durable alert while its execution and capacity remain held for inspection.
+
+For other installations, preserve the existing ledger, cooldown, and request-window identity; validate the wrapper against copied fixtures before switching scheduler ownership. Remove or disable the old startup entry before registering the replacement. Keep a rollback copy locally and never submit indexing requests as part of fixture tests.

@@ -319,7 +319,7 @@ The source automation is at `/home/deck/Projects/biomogging-indexing`. Its user-
 - `process-queue.sh` sets the next eligible time to 24 hours from when it detects its local request-attempt cap or a quota response. The wrapper also ensures a future daily gate after a successful queue run. The current timing is therefore not an exact record of the last successful submission plus 24 hours.
 - The inspected failure path sends a desktop notification; it does not launch an agent.
 
-These are observations about the current script, not assertions about Google's quota rules or decisions about Impulse's interface. The live automation has not been modified.
+These are observations about the current script, not assertions about Google's quota rules or decisions about Impulse's interface. At this interview stage the live automation had not been modified; the later approved migration is recorded in [indexing-migration.md](indexing-migration.md).
 
 ## Open design branches
 

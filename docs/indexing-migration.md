@@ -20,3 +20,11 @@ The local limit of 10 request attempts is an application budget, not a verified 
 Use the existing script CLI boundary with fixture browser/notification executables and copied state; use Impulse's executable CLI for task registration, agent outcomes, pause/resume, and durable scheduling. Public behavior tests must establish that recovery cannot reset quota state, manufacture a successful outcome, or submit during the initial cooldown. Use the baseline above for the implement skill's two-axis final review.
 
 The real recovery run is authorized separately from fixture testing. Observe its actual outcome and notification, and fix Impulse launch/integration defects exposed by that run. Preserve task-owned source and ledger backups locally; do not publish private state or browser data in this OSS repository.
+
+## Installed outcome — September 5, 2026
+
+The desktop CLI and Codex skill are installed and login startup is enabled. The old indexing systemd timer, service, and failure-notification unit were stopped, disabled, backed up, and removed. The managed installer refreshes the local CLI and skill after verified code changes.
+
+Immediate recovery executed through Codex in Yakuake. It fixed a read-only audit that returned success despite failed API calls. The API currently requires operator reauthentication; the browser is signed in, but its generic request errors remain unresolved. Codex reported failure honestly. Impulse disabled `google-indexing`, saved intervention/resume instructions beside its scripts, and delivered a persistent critical KDE notification. There is no pending automatic run while disabled.
+
+The original ledger, ten consumed local attempts, and September 6 at 14:04:23 EDT cooldown remain unchanged. No new indexing requests were made. Resuming is an explicit operator action after intervention; it requests recovery first and preserves quota state. See [review and validation evidence](review-indexing-migration.md).

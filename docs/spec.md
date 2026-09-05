@@ -77,7 +77,7 @@ Example definitions:
 - [Daily website task](examples/website-check.toml): agent instructions at 9 a.m., with a project working directory.
 - [One-off task](examples/one-off.toml): one agent assignment after a delay, with no recurrence.
 
-These are design samples. The indexing wrapper is a planned migration file and has not been created; the sample initial timestamp is illustrative and must be replaced before registration.
+These remain illustrative design samples; replace the sample initial timestamp before registration. The later local indexing wrapper and its approved recovery behavior are recorded in [indexing-migration.md](indexing-migration.md).
 
 ```sh
 impulse task validate ./impulse.toml --json
