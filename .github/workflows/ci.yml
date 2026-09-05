@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  devcontainer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: docker build -t impulse-dev -f .devcontainer/Dockerfile .
+      - run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspaces/impulse" -w /workspaces/impulse impulse-dev bun install --frozen-lockfile
+      - run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspaces/impulse" -w /workspaces/impulse impulse-dev bun run check
+      - run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspaces/impulse" -w /workspaces/impulse impulse-dev bun scripts/smoke-binary.ts
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.1
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun scripts/smoke-binary.ts
+      - run: bun scripts/package.ts
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: impulse-${{ matrix.os }}
+          path: dist/packages/*
+          if-no-files-found: error

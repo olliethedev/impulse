@@ -1,0 +1,9 @@
+{
+  "name": "Impulse",
+  "build": { "dockerfile": "Dockerfile", "context": ".." },
+  "remoteUser": "vscode",
+  "postCreateCommand": "bun install --frozen-lockfile",
+  "customizations": {
+    "vscode": { "settings": { "editor.tabSize": 2, "files.insertFinalNewline": true } }
+  }
+}

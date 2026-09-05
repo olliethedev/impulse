@@ -1,6 +1,6 @@
 # Impulse v1 — review draft
 
-Status: the interview is complete; implementation has not started. The accepted behavior below comes from [the interview record](design.md). The proposed defaults and all new command/schema details need review together. None of the example commands currently exist.
+Status: implementation is underway following approval to build. The accepted behavior below comes from [the interview record](design.md); the additional defaults guided the initial implementation. See [validation evidence](implementation.md) for what has been built and checked. This remains the v1 target, not a claim that all release checks have passed.
 
 Impulse is a local CLI that durably schedules scripts and agent work. Scripts and agents can request more agent work, change their next execution time, and disable future execution. People choose their own harness and terminal; the first local integration is Codex in Yakuake.
 

@@ -1,6 +1,6 @@
 # Proposed CLI and task definition contract
 
-Review draft supporting [the v1 spec](spec.md). All names, flags, schemas, and additional edge-case rules here are proposals. Commands are examples of the intended interface, not an implemented CLI.
+Contract supporting [the v1 spec](spec.md). The initial CLI implements the command surface below; see [implementation evidence and limitations](implementation.md) and `impulse --help` for the current executable. Release validation remains distinct from the design contract.
 
 ## Shared conventions
 
@@ -202,4 +202,4 @@ The planned `skills/impulse/SKILL.md` uses the standard skill entrypoint with na
 
 The skill should teach agents to inspect existing tasks before registering, select first-run timing explicitly, validate definitions, apply updates, interpret JSON/exit codes, distinguish quota waits from errors, and report outcomes. Scheduling future work remains available to an agent even when nested immediate-launch capacity is full. The skill does not grant permissions beyond the user's task or the harness's controls.
 
-The repository skill and bundled version must match the released CLI contract. No installable skill is being created while these command names are still under review.
+The repository skill and bundled version must match the released CLI contract. The installable skill now lives at `skills/impulse/SKILL.md` and is embedded in the standalone binary.

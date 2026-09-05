@@ -1,0 +1,20 @@
+{
+  "name": "impulse-cli",
+  "version": "0.1.0",
+  "description": "Durable local scheduling for scripts and agent assignments",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "repository": "https://github.com/olliethedev/impulse",
+  "packageManager": "bun@1.4.1",
+  "engines": { "bun": "1.4.1" },
+  "scripts": {
+    "dev": "bun src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun scripts/build.ts",
+    "check": "bun run typecheck && bun test && bun run build"
+  },
+  "dependencies": { "cron-parser": "5.10.0" },
+  "devDependencies": { "@types/bun": "1.4.1", "typescript": "7.0.2" }
+}

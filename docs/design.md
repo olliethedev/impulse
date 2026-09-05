@@ -1,6 +1,6 @@
 # Impulse design interview
 
-Status: interview complete; consolidated spec under review. This document records agreed decisions and the earlier open branches. See [the draft spec](spec.md) for the complete proposal and the remaining defaults to review. Implementation has not started.
+Status: interview complete; implementation authorized and underway. This document records agreed decisions and the earlier open branches. See [the specification](spec.md) for the consolidated target and [implementation evidence](implementation.md) for current validation.
 
 ## Stated intent
 

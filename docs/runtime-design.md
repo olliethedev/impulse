@@ -1,6 +1,6 @@
 # Proposed runtime design and feasibility checks
 
-This is an implementation proposal supporting [the review draft](spec.md). No runtime, devcontainer, dependency installation, or native launch flow has been built or tested yet.
+This design supports [the specification](spec.md). Implementation and current validation evidence are tracked in [implementation.md](implementation.md); the architecture below is the target contract, including release checks that still require native desktop evidence.
 
 ## Shared transactional core
 
