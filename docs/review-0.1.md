@@ -20,7 +20,7 @@ Three implementation defects were identified:
 
 ## Corrections and evidence
 
-POSIX runners now retain an owned process group and wait for its non-zombie members to end, including when the initial process has already exited. Graceful stop preserves stopping state/capacity for a resistant descendant; explicit force remains usable. Windows uses a suspended child assigned to a Job Object before execution, with descendant accounting and a private termination control file. Native Windows evidence is required for that adapter.
+POSIX runners now retain an owned process group and wait for its non-zombie members to end, including when the initial process has already exited. Graceful stop preserves stopping state/capacity for a resistant descendant; explicit force remains usable. Windows uses a suspended child assigned to a Job Object before execution, with descendant accounting and a private termination control file. Native Windows CLI and compiled execution evidence now passes; interactive desktop cancellation remains a separate check.
 
 Setup validates its supplied choices first. Notifications record ownership; abandoned delivery attempts become inspectable failures with an explicit duplicate-delivery caveat before manual retry. First-run updates now use update time for `now`/`schedule`, preserve the registration anchor for `after`, and validate changed absolute times.
 
@@ -35,3 +35,5 @@ Standards follow-up found two more lifecycle defects. A detached interactive pro
 Heartbeat and cancellation handling now begin before backend startup. Cleanup stops the private backend and waits for its process group before releasing capacity. Independent controlled-stub checks cover startup timeout, startup cancellation, a SIGTERM-resistant backend, and explicit force cancellation. Resistant work stays tracked and occupies capacity until termination. No model work or credentials were involved.
 
 Native CI also exposed canonical-path differences on macOS, Windows script-supervisor startup, and compiled Windows entrypoint/runner-command assumptions. The macOS test now compares canonical paths, the Windows helper inherits its runner's console, and compilation supplies an explicit executable-mode constant instead of recognizing Bun's virtual filesystem paths. Compiled smoke tests exercise registration through script completion and embedded skill installation.
+
+The Windows command-shell smoke test exposed an additional quoting boundary: cmd parses shell source differently from ordinary CRT argument arrays. Explicit cmd invocations now require one final source string, preserving its quotes through cmd's `/s` wrapper. Follow-up standards inspection found no material boundary defect and corrected the TOML example. The native batch regression, compiled smoke, and complete five-platform matrix pass in [run 33940612808](https://github.com/olliethedev/impulse/actions/runs/33940612808).
