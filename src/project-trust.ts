@@ -46,7 +46,7 @@ export async function prepareProjectTrust(harness: string, cwd: string, roots: s
   if (!allowed.some(root => within(root, directory))) return;
   const projects = projectDirectories(directory, harness);
   if (projects.some(project => !allowed.some(root => within(root, project)))) {
-    throw new ImpulseError("PROJECT_TRUST", "The repository trust root is outside trust.roots; trust it manually or explicitly update Impulse settings");
+    throw new ImpulseError("PROJECT_TRUST", `The repository trust root is outside trust.roots; trust it manually or explicitly update Impulse settings. Resolved projects: ${JSON.stringify(projects)}; allowed roots: ${JSON.stringify(allowed)}`);
   }
   const home = homedir();
   const configured = harness === "codex"
