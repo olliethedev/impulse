@@ -28,6 +28,10 @@ _Avoid_: Task registry, run history
 One execution of a task, including agent work that belongs to that execution. A task can have many runs over time.
 _Avoid_: Task, terminal session
 
+**Run context**:
+The association of executing work with its task, run, and, when applicable, agent assignment. It identifies whose work is being controlled or reported on.
+_Avoid_: Working directory, task definition, terminal session
+
 **Agent harness**:
 The application through which an agent performs work, such as Codex or Claude Code. The user configures which harness Impulse uses.
 _Avoid_: Model, terminal
@@ -49,7 +53,7 @@ An agent's explicit report of success or failure with a summary of its work. Rep
 _Avoid_: Terminal exit status
 
 **Handled agent failure**:
-An agent failure that its requesting script explicitly acknowledges as recovered from, allowing the overall run to succeed once the script and all other required work are resolved successfully. The original agent failure remains in history.
+An agent failure that its requesting script or agent explicitly acknowledges as recovered from, allowing the overall run to succeed once all required work is resolved successfully. The original agent failure remains in history.
 _Avoid_: Successful agent outcome, ignored failure
 
 **Agent capacity**:
