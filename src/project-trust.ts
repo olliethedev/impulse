@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -12,7 +12,16 @@ function object(value: unknown): Table {
 }
 function within(root: string, path: string) {
   const part = relative(root, path);
-  return part === "" || (!isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`));
+  if (part === "" || (!isAbsolute(part) && part !== ".." && !part.startsWith(`..${sep}`))) return true;
+  if (process.platform !== "win32") return false;
+  // Git expands Windows 8.3 names (RUNNER~1 -> runneradmin), while Bun's
+  // realpath can retain them. Compare ancestor identities without widening scope.
+  const identity = statSync(root, { bigint: true });
+  for (let current = path; ; current = dirname(current)) {
+    const candidate = statSync(current, { bigint: true });
+    if (identity.ino !== 0n && candidate.dev === identity.dev && candidate.ino === identity.ino) return true;
+    if (dirname(current) === current) return false;
+  }
 }
 function read(path: string): string | null {
   try { return readFileSync(path, "utf8"); }

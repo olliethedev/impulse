@@ -17,6 +17,7 @@ function fixture() {
 function git(cwd: string, ...args: string[]) {
   const result = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+  return result.stdout.toString().trim();
 }
 test("trust is opt-in machine configuration, validates roots, and defaults off", () => {
   const f = fixture();
@@ -92,11 +93,13 @@ test("repository subdirectories and Claude worktrees use the right trust roots",
   git(f.cwd, "init", "-q");
   git(f.cwd, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "fixture");
   const worktree = join(f.root, "worktree"); git(f.cwd, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", worktree);
+  // Git expands Windows short names even when fs.realpath preserves them.
+  const repository = realpathSync(git(f.cwd, "rev-parse", "--show-toplevel"));
   await prepareProjectTrust("codex", child, [f.root], f.env);
   const codex = (Bun.TOML.parse(readFileSync(f.codex, "utf8")) as any).projects;
-  expect(codex[child].trust_level).toBe("trusted"); expect(codex[f.cwd].trust_level).toBe("trusted");
+  expect(codex[child].trust_level).toBe("trusted"); expect(codex[repository].trust_level).toBe("trusted");
   await prepareProjectTrust("claude-code", worktree, [f.root], f.env);
-  expect(JSON.parse(readFileSync(f.claude, "utf8")).projects).toEqual({ [f.cwd]: { hasTrustDialogAccepted: true } });
+  expect(JSON.parse(readFileSync(f.claude, "utf8")).projects).toEqual({ [repository]: { hasTrustDialogAccepted: true } });
 });
 test("a repository root outside the approved directory is never newly trusted", async () => {
   const f = fixture(); git(f.home, "init", "-q");
