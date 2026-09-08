@@ -22,6 +22,7 @@ export interface Settings {
   notifications: { desktop: boolean; command?: string[] };
   harnesses: Record<string, Profile>;
   terminals: Record<string, Profile>;
+  trust?: { roots: string[] };
 }
 export interface ExecutionProfile { harness: string; terminal: string; harness_profile?: Profile; terminal_profile?: Profile }
 export type Outcome = "succeeded" | "failed" | "unconfirmed" | "interrupted" | "cancelled";

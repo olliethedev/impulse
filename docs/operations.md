@@ -24,6 +24,23 @@ Definitions for non-project agent work can live under the configuration director
 
 Commands select an executable and arguments without an implicit shell. For Windows batch files, select `cmd.exe` explicitly and put the shell source in one final argument: `command = ["cmd.exe", "/d", "/c", '"C:\path with spaces\job.cmd" "argument value"']`. Impulse preserves that source for cmd's parser. PowerShell scripts can use an ordinary `powershell.exe -NoProfile -File` argument array.
 
+## Project trust for unattended starts
+
+Codex and Claude Code can stop at a workspace trust dialog the first time an agent starts in a new project. Tool approval and sandbox settings are separate. To authorize automatic project trust for a directory tree, add this to the **host's Impulse settings**, then run `impulse config apply FILE --json`:
+
+```toml
+[trust]
+roots = ["/absolute/path/to/Projects"]
+```
+
+This is opt-in and defaults to no roots. Paths must be existing absolute directories; application stores their canonical paths. Built-in agent runners check the current host setting after claiming their ticket and before starting the harness. Scripts and custom harness profiles do not use this step. The setting also applies to existing tasks on their next launch without changing their schedules.
+
+For a task inside an approved root, Impulse adds exact trust entries using [Codex's `projects.<path>.trust_level`](https://learn.chatgpt.com/docs/config-file/config-reference) or [Claude Code's `projects["<path>"].hasTrustDialogAccepted`](https://code.claude.com/docs/en/permissions#project-allow-rules-and-workspace-trust). Codex gets its working directory and repository root; Claude gets its repository root, its main checkout for a worktree, or the working directory outside Git. All directories receiving trust must remain within approved roots. Symlinks cannot expand that scope. Outside the roots, the harness follows its normal trust flow.
+
+Configuration targets are `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`). The original configuration gets a private `.before-impulse-trust` backup before the first change. Updates preserve other settings, use an atomic replacement, serialize Impulse writers, and abort if they detect another writer changed the file. Ordinary new Codex entries preserve comments; existing inline or incomplete project tables may require TOML reserialization. Existing explicit trust values other than trusted, including Claude's `false`, require a manual decision and are never overwritten automatically. Parse errors and lock conflicts stop setup with an actionable error.
+
+Removing a root prevents future automatic additions; it does not revoke trust already stored in the harness. Revoke individual entries in the harness configuration explicitly. Do not restore an old whole-file backup over newer unrelated settings. This feature grants workspace trust only: authentication, tool permissions, MCP approvals, managed policies, and any other onboarding remain controlled by the harness.
+
 ## Custom harnesses and terminals
 
 Profiles are local settings. Impulse never interpolates prompts into shell source. The `{launch_file}` placeholder must occupy an entire argument after the executable.

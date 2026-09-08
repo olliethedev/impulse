@@ -9,6 +9,8 @@ Use `impulse --help` and `impulse doctor --json` to inspect this installation. R
 
 Before creating work, inspect `impulse task list --json` to avoid duplicates. Keep script definitions next to their scripts. Put project agent definitions in `.impulse/tasks/`; resolve `cwd` relative to the definition. For non-project work, use the `config/tasks` directory shown by `impulse doctor`.
 
+New task folders may trigger workspace trust dialogs. Inspect `impulse config show --json`: an explicitly authorized host setting `[trust] roots = ["/absolute/projects"]` lets built-in Codex and Claude Code launches record exact project trust beneath those roots. This defaults off, preserves existing trust refusals, and does not change tool approval or sandbox settings. Only configure roots the user has authorized; task definitions cannot grant trust. Custom harnesses manage their own trust setup. Removing a root stops future additions; revoke existing trust in the harness configuration explicitly.
+
 Every definition needs explicit first-run timing. Use calendar schedules for a clock time and completion intervals for elapsed time after the entire run, including its agents, succeeds. See [definitions](references/definitions.md) for examples.
 
 Validate and preview a definition before registering it:

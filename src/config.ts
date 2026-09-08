@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { ImpulseError, message, requireThat } from "./errors.ts";
 import { duration, timestamp, validateCron, localZone } from "./schedule.ts";
@@ -114,7 +114,7 @@ export function defaultSettings(): Settings {
 }
 export function parseSettings(raw: string): Settings {
   try {
-    const v = table(Bun.TOML.parse(raw), ["schema_version", "defaults", "limits", "retention", "notifications", "harnesses", "terminals"], "settings");
+    const v = table(Bun.TOML.parse(raw), ["schema_version", "defaults", "limits", "retention", "notifications", "harnesses", "terminals", "trust"], "settings");
     requireThat(v.schema_version === 1, "INVALID_CONFIG", "schema_version must be 1");
     const defaults = defaultSettings();
     const d = table(v.defaults ?? {}, ["harness", "terminal"], "defaults"), l = table(v.limits ?? {}, ["agents"], "limits"), n = table(v.notifications ?? {}, ["desktop", "command"], "notifications");
@@ -132,6 +132,16 @@ export function parseSettings(raw: string): Settings {
       return result;
     }
     const result: Settings = { schema_version: 1, defaults: { harness: str(d.harness ?? defaults.defaults.harness, "defaults.harness"), terminal: str(d.terminal ?? defaults.defaults.terminal, "defaults.terminal") }, limits: { agents: integer(l.agents, 10, "limits.agents") }, retention: retention(v.retention, defaults.retention) as Settings["retention"], notifications: { desktop: bool(n.desktop, true, "notifications.desktop"), ...(n.command === undefined ? {} : { command: command(n.command, "notifications.command") }) }, harnesses: profiles(v.harnesses, "harnesses"), terminals: profiles(v.terminals, "terminals") };
+    if (v.trust !== undefined) {
+      const trust = table(v.trust, ["roots"], "trust");
+      requireThat(Array.isArray(trust.roots), "INVALID_CONFIG", "trust.roots must be an array of absolute directory paths");
+      result.trust = { roots: [...new Set(trust.roots.map((value, i) => {
+        const path = str(value, `trust.roots[${i}]`);
+        requireThat(isAbsolute(path), "INVALID_CONFIG", "trust.roots must use absolute paths (no ~ expansion)");
+        requireThat(statSync(path).isDirectory(), "INVALID_CONFIG", `Trust root is not a directory: ${path}`);
+        return realpathSync(path);
+      }))] };
+    }
     executionProfile(result, {});
     return result;
   } catch (error) {

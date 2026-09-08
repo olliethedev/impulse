@@ -11,6 +11,7 @@ import { assignmentInstructions, launchTerminal, substitute, type LaunchDescript
 import { deliverPending, prune } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
 import { terminalProcess, type TerminalProcess, type ExecutionExit } from "./terminal-process.ts";
+import { prepareProjectTrust } from "./project-trust.ts";
 
 export async function startDaemon(engine: Engine) {
   const current = engine.lease();
@@ -112,6 +113,10 @@ export async function runner(file: string) {
     const env = { ...process.env, IMPULSE_CONTEXT: descriptor.context_file, IMPULSE_TASK_ID: context.task_id, IMPULSE_RUN_ID: context.run_id, ...(context.agent_id ? { IMPULSE_AGENT_ID: context.agent_id } : {}) };
     delete env.IMPULSE_AGENT_ID; if (context.agent_id) env.IMPULSE_AGENT_ID = context.agent_id;
     const script = ticket.kind === "script";
+    if (!script && !descriptor.profile.harness_profile) {
+      const trust = await prepareProjectTrust(descriptor.profile.harness, run.definition.cwd, engine.settings().trust?.roots ?? [], env);
+      if (trust) console.log(`Impulse trusted ${trust.projects.join(", ")} in ${trust.file}`);
+    }
     const initialPrompt = `Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}. Follow them to complete this Impulse assignment and report its explicit outcome using the supplied CLI context.`;
     let command: string[];
     if (script) {

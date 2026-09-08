@@ -117,3 +117,5 @@ Startup is opt-in and runs at desktop login. Disabling startup leaves current di
 Every command supports `--json`, and mutations are noninteractive. Agents can install the repository's [Impulse skill](skills/impulse/SKILL.md), which teaches task definitions, scheduling, outcomes, and error handling. Run `impulse --help` for the command list.
 
 Contributions are welcome under the [MIT license](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) and the [design specification](docs/spec.md).
+
+New agent task folders can require workspace trust before work starts. An optional host setting, `[trust] roots = ["/absolute/path/to/Projects"]`, authorizes built-in Codex and Claude Code launches to record project trust beneath that directory. See [setup and revocation](docs/operations.md#project-trust-for-unattended-starts).
