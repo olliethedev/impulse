@@ -28,6 +28,7 @@ Usage: impulse <group> <command> [arguments] [options]
   task register FILE [--name NAME] [--harness NAME] [--terminal NAME] [--disabled]
   task update TASK [--file FILE] [--harness NAME] [--terminal NAME]
                    [--clear-harness] [--clear-terminal]
+  task rename TASK --name NAME
   task list | show TASK | remove TASK
   task next [TASK] --at TIME | --after DURATION
   task disable [TASK] | enable TASK [--now | --at TIME]
@@ -149,6 +150,8 @@ export async function main() {
         requireThat(!(values["clear-harness"] && option("harness")) && !(values["clear-terminal"] && option("terminal")), "INVALID_OPTION", "Cannot set and clear the same override");
         const task = engine.task(needArg()), loaded = loadDefinition(option("file") ?? task.source);
         result = mutate(() => engine.update(task.id, loaded, { ...(values["clear-harness"] ? { harness: null } : option("harness") ? { harness: required("harness") } : {}), ...(values["clear-terminal"] ? { terminal: null } : option("terminal") ? { terminal: required("terminal") } : {}) }), loaded.hash); await startDaemon(engine);
+      } else if (command === "rename") {
+        allow("name"); result = mutate(() => engine.rename(needArg(), required("name"), context));
       } else if (command === "list") { allow(); result = engine.tasks(); }
       else if (command === "show") {
         allow(); const task = engine.task(needArg()); let drift: boolean | string;

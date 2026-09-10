@@ -29,6 +29,7 @@ Every public command is listed below. All support `--json`, and mutations run wi
 | `impulse task list` | List registered tasks. |
 | `impulse task show TASK` | Inspect applied configuration, next run, source-file changes, and the latest run. |
 | `impulse task update TASK` | Apply the edited definition. Use `--file FILE` to relink a moved definition while retaining task identity and history. |
+| `impulse task rename TASK --name NAME` | Change the registered name while preserving identity, history, timing, and active runs. |
 | `impulse task next [TASK] --after DURATION` | Set the next run relative to this request. Use `--at TIME` instead for a timestamp. Inside a run, omit `TASK` to target its task. |
 | `impulse task disable [TASK]` | Disable future automatic runs while current work finishes. Inside a run, omit `TASK` to target its task. |
 | `impulse task enable TASK` | Re-enable automatic runs. Use `--now` or `--at TIME` when explicit timing is needed. |
@@ -36,6 +37,8 @@ Every public command is listed below. All support `--json`, and mutations run wi
 | `impulse task remove TASK` | Unregister a task with no active run, preserving its source file and history. |
 
 Editing a definition does not apply it: use `task update`. An update replaces upcoming configuration and timing; an older active run can finish but cannot issue new scheduling changes. Registration is idempotent by canonical source path, so registering the same file again does not apply edits or reset timing.
+
+Use `impulse task rename indexing --name biomogging-google-indexing` to rename an existing task without replacing its registration. The new name must be unused. The task ID, source file, applied definition, enabled state, next run, and active run contexts stay unchanged. The registered name is local metadata, like `register --name`; changing the definition's `name` does not rename an existing registration. Update any scripts that look up the old name, or use the stable task ID. Retries can use `--request-id KEY` with the original arguments.
 
 ### Runs and logs
 
@@ -194,6 +197,8 @@ impulse task register .impulse/tasks/website-check.toml
 This task runs daily at 09:00 in the computer's local timezone. Calendar schedules retain their clock time; use an IANA timezone to pin a zone. Five numeric cron fields support lists, ranges, steps, and wildcards. Missed occurrences coalesce to one catch-up run by default, and runs of the same task do not overlap.
 
 The agent must [report its outcome](#report-an-agent-outcome). Reporting releases its capacity slot and lets the terminal remain open. The default global limit is 10 agents, configurable in settings. There is no automatic execution cutoff.
+
+New built-in terminal tabs include the registered task name and a short assignment ID, for example `Impulse: website-check [b925a2b8]`. Long names are shortened and control characters removed from the title. Nested agents use the task's current registered name when launched. A rename affects future tabs; already-open tabs retain their launch title. Custom terminal adapters receive the name as `task_name` in their launch descriptor and can choose their own title.
 
 ## From scripts and agents
 

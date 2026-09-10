@@ -69,7 +69,7 @@ async function launch(engine: Engine, ticket: Ticket) {
   const contextFile = join(p.contexts, `${ticket.id}.json`);
   privateJson(contextFile, { ...context, paths: p });
   const file = join(p.launches, `${ticket.id}.json`);
-  const descriptor: LaunchDescriptor = { schema_version: 1, ticket, paths: p, context_file: contextFile, profile: run.profile, runner: { command: [...selfCommand(), "_runner", file], cwd: run.definition.cwd }, keep_open: ticket.kind === "agent", ...(agent ? { instructions: assignmentInstructions(agent.instructions, contextFile, selfCommand()) } : {}) };
+  const descriptor: LaunchDescriptor = { schema_version: 1, ticket, task_name: engine.task(run.task_id).name, paths: p, context_file: contextFile, profile: run.profile, runner: { command: [...selfCommand(), "_runner", file], cwd: run.definition.cwd }, keep_open: ticket.kind === "agent", ...(agent ? { instructions: assignmentInstructions(agent.instructions, contextFile, selfCommand()) } : {}) };
   if (agent) {
     descriptor.instructions_file = join(p.launches, `${ticket.id}.instructions.md`);
     writeFileSync(descriptor.instructions_file, descriptor.instructions!, { mode: 0o600 });

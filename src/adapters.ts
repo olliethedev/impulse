@@ -7,6 +7,7 @@ import type { ExecutionProfile } from "./types.ts";
 export interface LaunchDescriptor {
   schema_version: 1;
   ticket: import("./engine.ts").Ticket;
+  task_name?: string;
   paths: import("./paths.ts").Paths;
   runner: { command: string[]; cwd: string };
   instructions?: string;
@@ -16,15 +17,25 @@ export interface LaunchDescriptor {
   keep_open: boolean;
 }
 export function substitute(command: string[], file: string): string[] { return command.map(arg => arg === "{launch_file}" ? file : arg); }
+export function terminalTitle(descriptor: Pick<LaunchDescriptor, "task_name" | "ticket">): string {
+  const name = (descriptor.task_name ?? descriptor.ticket.kind).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+  const characters = Array.from(name || descriptor.ticket.kind);
+  const label = characters.length > 80 ? characters.slice(0, 79).join("") + "…" : characters.join("");
+  const shortId = descriptor.ticket.id.replace(/^(agent|run)_/, "").slice(0, 8);
+  return `Impulse: ${label} [${shortId}]`;
+}
+// wt.exe splits unescaped semicolons even within a single argv element.
+export function windowsTerminalArgument(value: string): string { return value.replaceAll(";", "\\;"); }
 export async function launchTerminal(descriptor: LaunchDescriptor, file: string) {
   const profile = descriptor.profile;
   if (profile.terminal_profile) { await detach(substitute(profile.terminal_profile.command, file)); return; }
   const command = descriptor.runner.command;
-  const title = `Impulse ${descriptor.ticket.id.slice(0, 18)}`;
+  const title = terminalTitle(descriptor);
   switch (profile.terminal) {
     case "konsole":
       if (process.platform !== "linux") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Konsole requires Linux", 6);
-      await detach(["konsole", "--separate", "--hold", "--workdir", descriptor.runner.cwd, "-p", `tabtitle=${title}`, "-e", ...command]); return;
+      // Konsole's property parser has no escape for its semicolon separator.
+      await detach(["konsole", "--separate", "--hold", "--workdir", descriptor.runner.cwd, "-p", `tabtitle=${title.replaceAll(";", "；")}`, "-e", ...command]); return;
     case "yakuake": {
       if (process.platform !== "linux") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Yakuake requires Linux", 6);
       const qdbus = Bun.which("qdbus6") ?? Bun.which("qdbus") ?? "qdbus6";
@@ -52,12 +63,13 @@ export async function launchTerminal(descriptor: LaunchDescriptor, file: string)
       if (process.platform !== "darwin") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Terminal.app requires macOS", 6);
       const shell = command.map(shellQuote).join(" ");
       // argv is data to AppleScript, never interpolated into AppleScript source.
-      runCommand(["osascript", "-e", 'on run argv\ntell application "Terminal"\ndo script (item 1 of argv)\nend tell\nend run', shell]); return;
+      runCommand(["osascript", "-e", 'on run argv\ntell application "Terminal"\nset launchedTab to do script (item 1 of argv)\nset custom title of launchedTab to (item 2 of argv)\nend tell\nend run', shell, title]); return;
     }
     case "windows-terminal": {
       if (process.platform !== "win32") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Windows Terminal requires Windows", 6);
       const script = `& ${command.map(powershellQuote).join(" ")}`;
-      await detach(["wt.exe", "-w", "new", "new-tab", "--title", title, "--startingDirectory", descriptor.runner.cwd, ...powershell(script)]); return;
+      const args = ["-w", "new", "new-tab", "--title", title, "--suppressApplicationTitle", "--startingDirectory", descriptor.runner.cwd, ...powershell(script)];
+      await detach(["wt.exe", ...args.map(windowsTerminalArgument)]); return;
     }
     default: throw new ImpulseError("UNKNOWN_TERMINAL", `Unknown terminal ${profile.terminal}`, 6);
   }

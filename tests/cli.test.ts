@@ -21,16 +21,45 @@ afterEach(async () => {
     await invoke(home, ["daemon", "stop"]); await Bun.sleep(700); rmSync(home, { recursive: true, force: true });
   }
 });
+test("CLI rename is durable, retryable and separate from definition updates", async () => {
+  const home = await setup(), file = join(home, "task.toml"), name = "Bio-Mogging indexing ' \" $()";
+  writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "original", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(0)"] }, first_run: { kind: "now" } })!);
+  const before = (await invoke(home, ["task", "register", file, "--disabled"])).result.data;
+  const args = ["task", "rename", "original", "--name", name, "--request-id", "rename-once"];
+  const renamed = await invoke(home, args);
+  expect(renamed.code).toBe(0);
+  expect(renamed.result.data).toEqual({ ...before, name });
+  expect((await invoke(home, args)).result).toEqual(renamed.result);
+  expect((await invoke(home, ["task", "rename", "original", "--name", "different", "--request-id", "rename-once"])).result.error.code).toBe("REQUEST_CONFLICT");
+  expect((await invoke(home, ["task", "show", "original"])).code).toBe(3);
+  const shown = (await invoke(home, ["task", "show", name])).result.data;
+  expect(shown.id).toBe(before.id); expect(shown.source_drift).toBe(false);
+  expect(readFileSync(file, "utf8")).toContain('name = "original"');
+  expect((await invoke(home, ["task", "update", before.id])).result.data.name).toBe(name);
+  expect((await invoke(home, ["task", "rename", before.id])).code).toBe(2);
+  const otherFile = join(home, "other.toml");
+  writeFileSync(otherFile, readFileSync(file, "utf8").replace('name = "original"', 'name = "taken"'));
+  await invoke(home, ["task", "register", otherFile, "--disabled"]);
+  expect((await invoke(home, ["task", "rename", before.id, "--name", "taken"])).result.error.code).toBe("NAME_CONFLICT");
+  expect((await invoke(home, ["task", "show", before.id])).result.data.name).toBe(name);
+});
+
 test("CLI launches nested agents using custom profiles and preserves instructions as data", async () => {
   const home = await setup(), file = join(home, "task.toml");
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "nested", cwd: ".", work: { kind: "agent", instructions: "fixture:child\n' \" $(do-not-execute) `literal`" }, first_run: { kind: "now" }, schedule: { kind: "completion", after: "24h" } })!);
-  const registration = await invoke(home, ["task", "register", file]); expect(registration.code).toBe(0);
+  const registration = await invoke(home, ["task", "register", file, "--disabled"]); expect(registration.code).toBe(0);
+  expect((await invoke(home, ["task", "rename", "nested", "--name", "nested-title-demo"])).code).toBe(0);
+  await invoke(home, ["task", "enable", "nested-title-demo", "--now"]);
   let task;
-  for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "nested"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
+  for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "nested-title-demo"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
   expect(task.latest_run.status).toBe("succeeded");
   const run = await invoke(home, ["run", "show", task.latest_run.id]);
   expect(run.result.data.agents).toHaveLength(2);
   expect(run.result.data.agents[0].instructions).toContain("$(do-not-execute)");
+  const launchDirectory = (await invoke(home, ["doctor"])).result.data.paths.launches;
+  for (const agent of run.result.data.agents) {
+    expect(JSON.parse(readFileSync(join(launchDirectory, `${agent.id}.json`), "utf8")).task_name).toBe("nested-title-demo");
+  }
   expect(JSON.stringify(run.result)).not.toContain('"token"');
   expect(Date.parse(task.next.at) - Date.parse(task.latest_run.finished_at)).toBe(86400000);
 }, 20000);

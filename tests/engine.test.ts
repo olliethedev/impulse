@@ -8,6 +8,48 @@ const fixtures: ReturnType<typeof fixture>[] = [];
 function setup() { const f = fixture(); fixtures.push(f); return f; }
 afterEach(() => { for (const f of fixtures.splice(0)) f.close(); });
 
+test("renaming preserves identity, timing, disabled state, history and active callbacks", () => {
+  const f = setup(), loaded = f.definition('[schedule]\nkind="completion"\nafter="24h"');
+  const task = f.engine.register(loaded);
+  const ticket = f.tick()[0]!, run = f.engine.claim(ticket, "runner", 42, "boot");
+  f.engine.next(task.id, f.engine.after("2h"), run.context);
+  f.engine.disable(task.id, run.context);
+  const before = f.engine.task(task.id);
+  const history = f.engine.runs(task.id);
+  const renamed = f.engine.rename("fixture", "Bio-Mogging indexing");
+  expect(renamed).toEqual({ ...before, name: "Bio-Mogging indexing" });
+  expect(f.engine.runs(renamed.name)).toEqual(history);
+  expect(() => f.engine.task("fixture")).toThrow("Task not found");
+  expect(f.engine.register(loaded).name).toBe(renamed.name);
+  f.engine.next(undefined, f.engine.after("3h"), run.context);
+  f.engine.ended(ticket, "runner", 0);
+  const reopened = new Store(paths(f.home));
+  try {
+    const engine = new Engine(reopened, f.now);
+    expect(engine.task(renamed.name).id).toBe(task.id);
+    expect(engine.task(task.id).next?.at).toBe(f.now() + 3 * 3600000);
+    expect(engine.run(run.id).status).toBe("succeeded");
+  } finally { reopened.close(); }
+});
+
+test("rename rejects conflicting names, invalid names, removed tasks and another run's task", () => {
+  const f = setup(), loaded = f.definition(), task = f.engine.register(loaded);
+  const other = f.engine.register({ ...loaded, path: loaded.path + ".other", definition: { ...loaded.definition, name: "other" } });
+  const retired = f.engine.register({ ...loaded, path: loaded.path + ".retired", definition: { ...loaded.definition, name: "retired" } }, { disabled: true });
+  f.engine.remove(retired.id);
+  for (const name of ["", "   ", "invalid\0name", other.name, other.id, retired.id]) {
+    expect(() => f.engine.rename(task.id, name)).toThrow();
+    expect(f.engine.task(task.id)).toEqual(task);
+  }
+  const ticket = f.tick().find(t => t.run_id === f.engine.task(task.id).last_run)!;
+  const run = f.engine.claim(ticket, "runner", 42, "boot");
+  expect(() => f.engine.rename(other.id, "wrong task", run.context)).toThrow("only rename its own task");
+  expect(f.engine.rename(task.id, "own task", run.context).name).toBe("own task");
+  f.engine.ended(ticket, "runner", 0);
+  f.engine.remove(task.id);
+  expect(() => f.engine.rename(task.id, "retired")).toThrow("unregistered");
+});
+
 test("a confirmed next time survives script failure and reopening the database", () => {
   const f = setup(), task = f.engine.register(f.definition('[schedule]\nkind="completion"\nafter="24h"'));
   const ticket = f.tick()[0]!, run = f.engine.claim(ticket, "runner", 42, "boot");

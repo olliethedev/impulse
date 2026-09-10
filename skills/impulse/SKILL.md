@@ -23,6 +23,8 @@ impulse task register task.toml --json
 
 Registration is idempotent by canonical file path. Editing the file does not apply it: use `impulse task update TASK --json`. Updates replace all upcoming timing and fence old run scheduling callbacks. Read `task show` to inspect applied configuration and drift.
 
+Rename with `impulse task rename TASK --name NAME --json`; do not remove and recreate the task. Renaming preserves the ID, history, timing, enabled state and active contexts, and changes only the local registered name. Update callers using the old name, or use its stable task ID. New terminal tabs include the current task name and a short assignment ID; already-open tabs keep their launch titles.
+
 Within a launched script or agent, Impulse supplies a run context. Use `--context PATH` explicitly if a helper or harness does not inherit `IMPULSE_CONTEXT`. Schedule and outcome acknowledgments are durable only after the command succeeds.
 
 ```sh

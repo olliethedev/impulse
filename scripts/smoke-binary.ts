@@ -30,5 +30,9 @@ try {
   const logs = await cli(["run", "logs", task.latest_run.id]);
   if (task.latest_run?.status !== "succeeded") throw new Error(`Compiled execution failed: ${JSON.stringify(task)}\n${logs.log}`);
   if (!logs.log.includes("compiled-smoke")) throw new Error("Compiled script output missing");
-  console.log("Compiled binary: entrypoint, bundled skill, registration, SQLite, daemon, script runner, and logs passed.");
+  const renamed = await cli(["task", "rename", "smoke", "--name", "smoke-renamed", "--request-id", "smoke-rename"]);
+  const repeated = await cli(["task", "rename", "smoke", "--name", "smoke-renamed", "--request-id", "smoke-rename"]);
+  const shown = await cli(["task", "show", "smoke-renamed"]);
+  if (renamed.id !== task.id || repeated.id !== task.id || shown.last_run !== task.last_run || shown.revision !== task.revision) throw new Error("Compiled rename did not preserve identity/history");
+  console.log("Compiled binary: entrypoint, bundled skill, registration, rename, SQLite, daemon, script runner, and logs passed.");
 } finally { await cli(["daemon", "stop"]); await Bun.sleep(1000); rmSync(home, { recursive: true, force: true }); }

@@ -73,6 +73,21 @@ export class Engine {
       this.recompute(task); this.store.put("tasks", task); this.event(task.id, null, "updated", { revision: task.revision }); return task;
     });
   }
+  rename(reference: string, name: string, context?: Context): Task {
+    return this.store.atomic(() => {
+      const task = this.task(reference);
+      requireThat(!task.removed, "NOT_FOUND", "Task is unregistered", 3);
+      if (context) requireThat(this.context(context).task.id === task.id, "CONTEXT_SCOPE", "A run may only rename its own task", 4);
+      requireThat(name.trim().length > 0 && !name.includes("\0"), "INVALID_NAME", "Task name must be a nonempty string without NUL");
+      requireThat(!this.store.all("tasks").some(t => t.id !== task.id && (t.id === name || (!t.removed && t.name === name))), "NAME_CONFLICT", `Task name ${name} is already in use; choose another name`, 4);
+      if (task.name === name) return task;
+      const previous = task.name;
+      task.name = name;
+      this.store.put("tasks", task);
+      this.event(task.id, context?.run_id ?? null, "renamed", { previous_name: previous, name });
+      return task;
+    });
+  }
   applySettings(settings: Settings): Settings {
     return this.store.atomic(() => {
       for (const task of this.tasks()) {

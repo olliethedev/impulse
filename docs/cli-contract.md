@@ -26,6 +26,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `task preview FILE [--at TIMESTAMP]` | Show resolved working directory, schedule, and prospective first occurrences without activating anything. |
 | `task register FILE [--name NAME] [--harness NAME] [--terminal NAME] [--disabled]` | Register a source definition and local execution overrides. Return identity, revision, effective choices, and next time. |
 | `task update TASK [--file FILE] [--harness NAME] [--terminal NAME]` | Apply the source file or explicitly relink it, retaining identity/history and replacing upcoming configuration/timing. |
+| `task rename TASK --name NAME` | Change only the registered name. Preserve task ID, history, source/applied definition, revision, enabled/held state, next time and active contexts. Reject a conflicting or empty name. |
 | `task list` / `task show TASK` | Inspect applied state, source path, source drift, latest run, and why the next execution is due, queued, disabled, or awaiting intervention. |
 | `task next [TASK] --at TIME` / `--after DURATION` | Replace the next scheduled execution. Omit TASK only within a valid run context. |
 | `task disable [TASK]` | Disable future automatic execution without stopping current work. |
@@ -50,6 +51,10 @@ Task-local harness/terminal overrides can be cleared explicitly using `--clear-h
 ## Identity and definition application
 
 The registry keys a definition's canonical source path to a generated task ID. A repeated registration of that path returns the existing identity without reapplying changed contents or resetting initial timing. A name collision from a different path is an error with instructions to choose another local name. An explicit update can relink a moved file without losing history.
+
+`task rename` changes local registration metadata, like the name selected with `register --name`; it does not edit the source or its applied definition and does not increment the configuration revision. Name validation, the rename event and any request receipt commit together. The same-name operation is a no-op. Active runs keep working and can still use their contexts for scheduling and outcomes. A context-bearing rename may target only that context's task. Use the stable task ID in integrations that must survive a rename. Existing notification records and open tabs retain their recorded names; new notifications and launches use the current registered name.
+
+New launch descriptors include optional `task_name` metadata for custom terminal/harness adapters. Built-in terminals title new agent tabs `Impulse: TASK NAME [SHORT ASSIGNMENT ID]`, with control characters removed and long names shortened. Descriptors without a task name fall back to the execution kind and short ID. Terminal titles are data and never part of the runner's shell command. Windows Terminal arguments escape its semicolon command separators; Konsole titles display semicolons as `；` because its profile-property parser has no escaping mechanism.
 
 Resolve `cwd` and configuration file references relative to the definition's directory, never the CLI's invocation directory. Resolve the executable and runtime arguments from that working directory/environment according to their normal process semantics. No shell expansion occurs inside command arrays; a script needing shell syntax explicitly selects its shell as the executable.
 
