@@ -51,7 +51,7 @@ test("observation callbacks validate input and preserve receipt, scope and read-
     f.engine.finish(agent.context, "succeeded", "Verified");
     expect((await invoke(f.home, ["agent", "observe", "--file", observation, "--context", context])).code).toBe(4);
   } finally { f.close(); }
-});
+}, 20000); // Windows diagnosis invokes the native boot-identity probe through PowerShell/CIM.
 test("CLI rename is durable, retryable and separate from definition updates", async () => {
   const home = await setup(), file = join(home, "task.toml"), name = "Bio-Mogging indexing ' \" $()";
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "original", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(0)"] }, first_run: { kind: "now" } })!);
