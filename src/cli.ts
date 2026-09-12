@@ -14,6 +14,8 @@ import { startup, startupStatus } from "./startup.ts";
 import { installSkill, skillDirectory, uninstallSkill } from "./skill.ts";
 import { deliverPending, prune, retryNotification } from "./maintenance.ts";
 import { activeStatuses, type Context } from "./types.ts";
+import { loadObservation } from "./observation.ts";
+import { claudeHook } from "./claude-observation.ts";
 
 const help = `Impulse 0.1.0 — durable local scheduling for scripts and agents
 
@@ -34,10 +36,12 @@ Usage: impulse <group> <command> [arguments] [options]
   task disable [TASK] | enable TASK [--now | --at TIME]
   task run TASK [--reset-next]
   run list [--task TASK] | show RUN | wait RUN | logs RUN [--follow]
+  run diagnose RUN                      (read-only execution and recovery evidence)
   run stop RUN [--force]                 (does not disable future runs)
   run confirm-ended RUN --reason TEXT   (operator verification of uncertain work)
   agent request --instructions TEXT | --instructions-file FILE [--no-wait]
   agent show ID | wait ID
+  agent observe --file FILE             (optional harness progress JSON)
   agent finish --outcome success|failed --summary TEXT
   agent handle ID --reason TEXT
   agent resolve ID --outcome success|failed --reason TEXT
@@ -56,7 +60,7 @@ const stringOptions = ["context", "request-id", "harness", "terminal", "name", "
 const parsed = () => parseArgs({ args: process.argv.slice(2), allowPositionals: true, strict: true, options: Object.fromEntries([...booleanOptions.map(name => [name, { type: "boolean" as const }]), ...stringOptions.map(name => [name, { type: "string" as const }])]) });
 function publicValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(publicValue);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).filter(([key]) => !["token", "runner_nonce", "ticket", "elapsed", "registered_clock", "finished_clock"].includes(key)).map(([key, value]) => [key, typeof value === "number" && ["at", "registered_at", "created_at", "finished_at", "ended_at", "launch_at", "heartbeat", "until", "tick"].includes(key) ? new Date(value).toISOString() : publicValue(value)]));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).filter(([key]) => !["token", "runner_nonce", "ticket", "elapsed", "registered_clock", "finished_clock"].includes(key)).map(([key, value]) => [key, typeof value === "number" && ["at", "registered_at", "created_at", "finished_at", "ended_at", "launch_at", "heartbeat", "until", "tick", "checked_at"].includes(key) ? new Date(value).toISOString() : publicValue(value)]));
   return value;
 }
 function waitCode(status: string) { return status === "failed" ? 10 : status === "unconfirmed" ? 11 : ["interrupted", "cancelled"].includes(status) ? 12 : 0; }
@@ -68,6 +72,7 @@ async function waitFor(engine: Engine, kind: "run" | "agent", id: string) {
   }
 }
 export async function main() {
+  if (process.argv[2] === "_claude-hook") { await claudeHook(process.argv[3]!, process.argv[4]!); return; }
   if (process.argv[2] === "_runner") { await runner(process.argv[3]!); return; }
   if (["_daemon", "_supervise"].includes(process.argv[2]!)) {
     const p = explicitPaths(process.argv[3]!, process.argv[4]!);
@@ -170,6 +175,7 @@ export async function main() {
     } else if (group === "run") {
       if (command === "list") { allow("task"); result = engine.runs(option("task")); }
       else if (command === "show") { allow("current"); const id = currentRun(); result = { ...engine.run(id), agents: engine.agents(id), events: engine.events(id) }; }
+      else if (command === "diagnose") { allow("current"); result = engine.diagnose(currentRun(), bootId(), alive); }
       else if (command === "wait") { allow(); result = await waitFor(engine, "run", needArg()); }
       else if (command === "stop") { allow("force"); result = mutate(() => engine.stop(needArg(), !!values.force)); }
       else if (command === "confirm-ended") { allow("reason"); requireThat(!context, "OPERATOR_REQUIRED", "Confirmation is an operator command; unset the run context", 4); result = mutate(() => engine.confirmEnded(needArg(), required("reason"), alive)); }
@@ -195,6 +201,7 @@ export async function main() {
         const agent = mutate(() => engine.request(requireContext(), instructions), instructions);
         result = values["no-wait"] ? agent : await waitFor(engine, "agent", agent.id);
       } else if (command === "show") { allow(); result = engine.agent(needArg()); }
+      else if (command === "observe") { allow("file"); const input = loadObservation(required("file")); result = mutate(() => engine.observe(requireContext(), input), input); }
       else if (command === "wait") { allow(); result = await waitFor(engine, "agent", needArg()); }
       else if (command === "finish") { allow("outcome", "summary"); result = mutate(() => engine.finish(requireContext(), outcome(), required("summary"))); }
       else if (command === "handle") { allow("reason"); result = mutate(() => engine.handle(requireContext(), needArg(), required("reason"))); }

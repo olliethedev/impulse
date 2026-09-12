@@ -12,6 +12,9 @@ import { deliverPending, prune } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
 import { terminalProcess, type TerminalProcess, type ExecutionExit } from "./terminal-process.ts";
 import { prepareProjectTrust } from "./project-trust.ts";
+import { activeStatuses } from "./types.ts";
+import { observeCodex } from "./codex-observation.ts";
+import { claudeSettings, supportsClaudeObservation } from "./claude-observation.ts";
 
 export async function startDaemon(engine: Engine) {
   const current = engine.lease();
@@ -90,6 +93,7 @@ export async function runner(file: string) {
   let log: number | undefined, child: ProcessHandle | undefined, server: ChildProcess | undefined, terminal: TerminalProcess | undefined;
   let external = false, sentGrace = false, sentForce = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let observer: ReturnType<typeof observeCodex> | undefined, codexSocket: string | undefined;
   const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
   const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
   async function waitForOwnedGroups() {
@@ -100,6 +104,7 @@ export async function runner(file: string) {
     heartbeat = setInterval(() => {
       try {
         const state = engine.heartbeat(ticket, nonce);
+        if (state.done && observer) { void observer.close(); observer = undefined; }
         if (state.cancel && !state.done && (child || server) && (!sentGrace || (state.force && !sentForce))) {
           if (!external) {
             if (process.platform === "win32") privateJson(controlFile, { force: state.force });
@@ -125,9 +130,21 @@ export async function runner(file: string) {
     } else if (descriptor.profile.harness_profile) {
       command = substitute(descriptor.profile.harness_profile.command, file);
       external = descriptor.profile.harness_profile.lifecycle === "external";
-    } else if (descriptor.profile.harness === "claude-code") command = ["claude", initialPrompt];
+      engine.observe(context, { state: "unavailable", note: "Custom harness: optional agent observe reports are not yet available; its declared execution lifecycle still applies." });
+    } else if (descriptor.profile.harness === "claude-code") {
+      const version = Bun.spawnSync(["claude", "--version"], { stdout: "pipe", stderr: "pipe", timeout: 15000 });
+      if (version.exitCode === 0 && supportsClaudeObservation(version.stdout.toString())) {
+        const session = randomUUID(), settings = join(descriptor.paths.launches, `${ticket.id}.claude-settings.json`);
+        privateJson(settings, claudeSettings(selfCommand(), descriptor.context_file, session));
+        command = ["claude", "--settings", settings, "--session-id", session, initialPrompt];
+        engine.observe(context, { state: "unavailable", session_id: session, note: "Waiting for Claude observation hooks. User or managed policy can disable hooks." }, "claude-hooks");
+      } else {
+        command = ["claude", initialPrompt];
+        engine.observe(context, { state: "unavailable", note: "This Claude Code version has no verified observation adapter; inspect its terminal and owned work." }, "claude-hooks");
+      }
+    }
     else {
-      const help = Bun.spawnSync(["codex", "--help"], { stdout: "pipe", stderr: "pipe" });
+      const help = Bun.spawnSync(["codex", "--help"], { stdout: "pipe", stderr: "pipe", timeout: 15000 });
       if (help.exitCode !== 0) throw new Error("Codex is unavailable; run impulse doctor");
       if (process.platform !== "win32" && help.stdout.toString().includes("--remote")) {
         // A private backend keeps cancellation scoped to this assignment, even on shared-daemon Codex versions.
@@ -141,10 +158,12 @@ export async function runner(file: string) {
           await Bun.sleep(100);
         }
         if (!existsSync(socket)) throw new Error(serverError ?? "Private Codex backend did not start");
+        codexSocket = socket;
         command = ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, initialPrompt];
       } else {
         command = ["codex", "--cd", run.definition.cwd, initialPrompt];
         external = help.stdout.toString().includes("shared local app-server");
+        engine.observe(context, { state: "unavailable", note: "This Codex launch has no private observation transport; its process/external lifecycle still applies." }, "codex-app-server");
       }
     }
     if (engine.heartbeat(ticket, nonce).cancel) throw new Error("Cancelled before execution started");
@@ -156,7 +175,14 @@ export async function runner(file: string) {
       if (script) { spawned.stdout?.on("data", bytes => writeSync(log!, bytes)); spawned.stderr?.on("data", bytes => writeSync(log!, bytes)); }
       child = spawned; exit = childExit(spawned);
     }
+    if (codexSocket) observer = observeCodex(codexSocket, initialPrompt, observation => {
+      try { engine.observe(context, observation, "codex-app-server"); }
+      catch (error) {
+        if (activeStatuses.includes(engine.agent(ticket.id).status)) console.error(`Impulse observer: ${message(error)}`);
+      }
+    });
     const result = await exit;
+    await observer?.close(); observer = undefined;
     if (server) { try { stopChild(server, false, true); } catch { /* Reconciliation retains uncertainty below if needed. */ } }
     await waitForOwnedGroups();
     if (process.platform === "win32" && !external) {
@@ -176,7 +202,7 @@ export async function runner(file: string) {
     } catch { uncertain = true; }
     try { engine.ended(ticket, nonce, null, message(error), uncertain); } catch { /* A duplicate ticket must not mutate its original runner. */ }
   } finally {
-    terminal?.close(); if (heartbeat) clearInterval(heartbeat); if (log !== undefined) closeSync(log); store.close();
+    await observer?.close(); terminal?.close(); if (heartbeat) clearInterval(heartbeat); if (log !== undefined) closeSync(log); store.close();
   }
   if (descriptor.keep_open && process.stdin.isTTY) {
     console.log("\nImpulse assignment ended. This terminal remains open; press Enter to close the runner.");

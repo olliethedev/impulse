@@ -3,7 +3,7 @@ import { defaultSettings, executionProfile, type LoadedDefinition } from "./conf
 import { requireThat } from "./errors.ts";
 import { duration, firstDue, nextCalendar, timestamp, zone } from "./schedule.ts";
 import { Store } from "./store.ts";
-import { activeStatuses, type Agent, type ClockSample, type Context, type Due, type Execution, type Lease, type Outcome, type Run, type Settings, type Task } from "./types.ts";
+import { activeStatuses, type Agent, type ClockSample, type Context, type Due, type Execution, type HarnessObservation, type Lease, type Observation, type Outcome, type Run, type Settings, type Task } from "./types.ts";
 
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 const active = (status: string) => activeStatuses.includes(status as Run["status"]);
@@ -380,11 +380,66 @@ export class Engine {
       return { cancel: run.cancel, force: run.force, done: !active(execution.status) };
     });
   }
+  observe(context: Context, observation: Observation, source: HarnessObservation["source"] = "wrapper"): Agent {
+    return this.store.atomic(() => {
+      const { run, task, agent } = this.context(context);
+      requireThat(agent, "AGENT_CONTEXT_REQUIRED", "Harness observations require an agent context", 4);
+      const previous = agent.observation;
+      const lastFailure = agent.last_harness_failure;
+      const { at: _at, ...before } = previous ?? {};
+      const next = { ...observation, source };
+      agent.observation = { ...next, at: this.now() };
+      if (observation.state === "failed") agent.last_harness_failure = agent.observation;
+      this.store.put("agents", agent);
+      if (JSON.stringify(before) !== JSON.stringify(next)) {
+        const failed = observation.state === "failed";
+        this.event(task.id, run.id, failed ? "harness_failure" : "harness_observed", { agent_id: agent.id, observation: agent.observation });
+        const newFailure = failed && (!lastFailure || lastFailure.session_id !== observation.session_id || lastFailure.turn_id !== observation.turn_id || lastFailure.error?.code !== observation.error?.code || lastFailure.error?.message !== observation.error?.message);
+        if (newFailure && run.definition.notifications.on_failure) {
+          this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id,
+            outcome: "unconfirmed", summary: `Harness reported a failure for ${task.name}. Execution remains tracked; inspect with impulse run diagnose ${run.id}.`,
+            at: this.now(), status: "pending", error: null });
+        }
+      }
+      return agent;
+    });
+  }
+  diagnose(runId: string, currentBoot: string, isAlive: (pid: number) => boolean) {
+    const run = this.run(runId), task = this.task(run.task_id);
+    const issues: { code: string; component?: string; message: string }[] = [];
+    const executions = [...this.agents(runId).map(agent => ({ id: agent.id, kind: "agent", execution: agent })),
+      ...(run.script ? [{ id: run.id, kind: "script", execution: run.script }] : [])];
+    const components = executions.map(({ id, kind, execution: e }) => {
+      const runnerAlive = e.pid === null || e.boot_id === null ? null : e.boot_id !== currentBoot ? false : isAlive(e.pid);
+      if (active(e.status) && runnerAlive === false) issues.push({ code: "RUNNER_MISSING", component: id, message: "The recorded runner is absent. Check its harness, tools and external work before confirming termination." });
+      if (e.observation?.state === "failed" && e.status !== "succeeded") issues.push({ code: "HARNESS_FAILURE", component: id, message: e.observation.error?.message ?? "The harness reported a failed turn." });
+      if (e.observation?.state === "unavailable" && e.last_harness_failure) issues.push({ code: "LAST_HARNESS_FAILURE", component: id, message: "A prior harness failure was recorded, but current progress cannot be observed. Inspect the retained failure and session." });
+      if (kind === "agent" && (!e.observation || e.observation.state === "unavailable")) issues.push({ code: "OBSERVATION_UNAVAILABLE", component: id, message: e.observation?.note ?? "This launch has no structured harness observation. Inspect the assignment session and its owned work." });
+      if (e.status === "uncertain" || e.status === "stopping") issues.push({ code: "EXECUTION_UNCERTAIN", component: id, message: "Replacement remains blocked until owned and external execution is known to have ended." });
+      if (e.status === "unconfirmed") issues.push({ code: "OUTCOME_MISSING", component: id, message: "Execution ended without an explicit assignment outcome. Inspect outputs before resolving it." });
+      return { id, kind, status: e.status, pid: e.pid, boot_id: e.boot_id, runner_alive: runnerAlive,
+        heartbeat: e.heartbeat, heartbeat_age_ms: e.heartbeat === null ? null : Math.max(0, this.now() - e.heartbeat),
+        observation: e.observation ?? null, observation_age_ms: e.observation ? Math.max(0, this.now() - e.observation.at) : null,
+        last_harness_failure: e.last_harness_failure ?? null,
+        error: e.error, exit_code: e.exit_code, ended_at: e.ended_at,
+        ...(kind === "agent" ? { outcome: (e as Agent).outcome, summary: (e as Agent).summary } : {}) };
+    });
+    const activeRuns = this.runs(task.id).filter(r => active(r.status)).map(r => r.id);
+    const recovery: { command: string[]; when: string }[] = [];
+    if (active(run.status)) recovery.push({ command: ["impulse", "run", "stop", run.id], when: "If abandoning this run, request scoped cancellation; verify tools and external work have stopped." });
+    if (components.some(c => ["uncertain", "stopping"].includes(c.status))) recovery.push({ command: ["impulse", "run", "confirm-ended", run.id, "--reason", "<verified evidence>"], when: "Only after every runner and all owned/external work have ended. A missing PID or failed turn alone is insufficient." });
+    for (const c of components.filter(c => c.kind === "agent" && c.status === "unconfirmed")) recovery.push({ command: ["impulse", "agent", "resolve", c.id, "--outcome", "failed", "--reason", "<verified outcome>"], when: "Record failed for incomplete work; choose success only when all required results are verified." });
+    return { run_id: run.id, task_id: task.id, task_name: task.name, status: run.status, harness: run.profile.harness,
+      checked_at: this.now(), replacement_blocked: activeRuns.length > 0, components, issues, recovery,
+      schedule: { enabled: task.enabled, hold: task.hold, next: task.next, active_runs: activeRuns },
+      note: "Read-only diagnosis. Observations may be stale; idle and zero observed tools do not prove external work ended. Existing schedules are unchanged." };
+  }
   ended(ticket: Ticket, nonce: string, exitCode: number | null, error: string | null = null, external = false) {
     return this.store.atomic(() => {
       const run = this.run(ticket.run_id), execution = ticket.kind === "agent" ? this.agent(ticket.id) : run.script;
       requireThat(execution?.runner_nonce === nonce, "RUNNER_CHANGED", "Runner identity mismatch", 4);
       if (!active(execution.status)) return;
+      error ??= execution.observation?.state === "failed" ? execution.observation.error?.message ?? "Harness reported a failed turn" : null;
       execution.exit_code = exitCode; execution.error = error;
       if (external) {
         if (execution.status !== "uncertain") this.executionUncertain(run, ticket.id);
@@ -408,7 +463,7 @@ export class Engine {
     this.event(run.task_id, run.id, "execution_uncertain", { component });
     if (run.definition.notifications.on_interruption) {
       const task = this.task(run.task_id);
-      this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id, outcome: "unconfirmed", summary: "Execution liveness is uncertain. Automatic replacement is held; inspect the run before resolving it.", at: this.now(), status: "pending", error: null });
+      this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id, outcome: "unconfirmed", summary: `Execution liveness is uncertain. Automatic replacement is held; inspect with impulse run diagnose ${run.id} before resolving it.`, at: this.now(), status: "pending", error: null });
     }
   }
   reconcile(bootId: string, alive: (pid: number) => boolean) {

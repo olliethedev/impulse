@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fixture } from "./helpers.ts";
 const homes: string[] = [];
 const cli = [process.execPath, resolve("src/cli.ts")];
 async function invoke(home: string, args: string[]) {
@@ -20,6 +21,36 @@ afterEach(async () => {
   for (const home of homes.splice(0)) {
     await invoke(home, ["daemon", "stop"]); await Bun.sleep(700); rmSync(home, { recursive: true, force: true });
   }
+});
+test("observation callbacks validate input and preserve receipt, scope and read-only diagnosis contracts", async () => {
+  const f = fixture(), context = join(f.home, "context.json"), observation = join(f.home, "observation.json");
+  try {
+    f.engine.register(f.definition('', '[work]\nkind="agent"\ninstructions="fixture"'));
+    const ticket = f.tick()[0]!, run = f.engine.claim(ticket, "runner", 42, "boot"), agent = f.engine.agent(run.root_agent!);
+    writeFileSync(context, JSON.stringify({ ...agent.context, paths: f.store.paths }));
+    const args = ["agent", "observe", "--file", observation, "--context", context, "--request-id", "observation-once"];
+    for (const invalid of ['{broken', '{"state":"succeeded"}', '{"state":"idle","active_tools":-1}', '{"state":"failed"}', '{"state":"idle","token":"secret"}']) {
+      writeFileSync(observation, invalid);
+      expect((await invoke(f.home, args)).result.error.code).toBe("INVALID_OBSERVATION");
+    }
+    writeFileSync(observation, '{"state":"failed","session_id":"wrapper","error":{"code":"overloaded","message":"Try later"}}');
+    const first = await invoke(f.home, args);
+    expect(first.code).toBe(0);
+    expect((await invoke(f.home, args)).result).toEqual(first.result);
+    writeFileSync(observation, '{"state":"active"}');
+    expect((await invoke(f.home, args)).result.error.code).toBe("REQUEST_CONFLICT");
+    const before = f.engine.events(run.id);
+    const report = await invoke(f.home, ["run", "diagnose", "--current", "--context", context]);
+    expect(report.code).toBe(0);
+    expect(report.result.data.run_id).toBe(run.id);
+    expect(report.result.data.checked_at).toBeString();
+    expect(report.result.data.components[0].runner_alive).toBe(false);
+    expect(JSON.stringify(report)).not.toContain(agent.context.token);
+    expect(f.engine.events(run.id)).toEqual(before);
+    expect((await invoke(f.home, ["run", "diagnose", run.id, "--force"])).result.error.code).toBe("INVALID_OPTION");
+    f.engine.finish(agent.context, "succeeded", "Verified");
+    expect((await invoke(f.home, ["agent", "observe", "--file", observation, "--context", context])).code).toBe(4);
+  } finally { f.close(); }
 });
 test("CLI rename is durable, retryable and separate from definition updates", async () => {
   const home = await setup(), file = join(home, "task.toml"), name = "Bio-Mogging indexing ' \" $()";

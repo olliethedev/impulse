@@ -67,6 +67,62 @@ Yakuake uses D-Bus to create a fresh session. If its bus owner is a Flatpak, the
 
 ## Timing, failures, and recovery
 
+Start with `impulse run diagnose RUN --json`. Diagnosis shows each component's
+recorded runner identity, current PID/boot check, heartbeat and observation ages,
+latest harness progress, retained prior failure, reported outcome, and conditional
+recovery commands. It also shows the task's actual enabled/held state, next time,
+and all active runs blocking replacement. Diagnosis does not start dispatch,
+change state, or probe arbitrary transcript directories. Historical launches may
+have no observation evidence; the tool reports that limitation explicitly.
+
+The Codex adapter observes only the private Unix app-server it launched, with
+read-only session/turn queries approximately every five seconds. Paginated turn
+reads fall back to the older `thread/read` interface. Session discovery must match
+the exact assignment prompt. A missing or incompatible protocol is reported as
+unavailable, without affecting the harness. On Windows and older/shared Codex
+launch paths, the existing process/external lifecycle remains the available
+evidence. Observation stops after an explicit assignment outcome.
+
+Claude Code 2.1.269 and later receives an Impulse-owned, session-only settings file
+with `SessionStart`, `UserPromptSubmit`, `Stop`, and `StopFailure` command hooks.
+Hooks use an argument array, verify the expected session, and return no decisions.
+No user settings file is edited. Existing hooks merge according to Claude's
+settings rules; managed restrictions and disabled hooks remain respected. Older
+versions continue through process-level observation. If hooks do not fire,
+diagnosis reports missing evidence rather than assuming progress.
+
+Harness errors generate an actionable notification when failure notifications
+are enabled, while the run remains tracked. Notifications contain no raw error
+text; detailed errors stay in private run evidence. A failed turn may still have
+running tools. Idle sessions and zero observed tools do not prove external work
+has ended. Current observation can become unavailable without losing the last
+recorded failure. Observations never trigger automatic retries, change models,
+or override explicit task timing.
+
+Custom harnesses may optionally report the same progress contract:
+
+```json
+{
+  "state": "failed",
+  "session_id": "wrapper-session-id",
+  "turn_id": "turn-id",
+  "error": { "code": "overloaded", "message": "Provider rejected the turn" }
+}
+```
+
+```sh
+impulse agent observe --file observation.json --json
+```
+
+The file is limited to 16 KiB. States are `active`, `idle`, `failed`, and
+`unavailable`. Only `failed` requires/allows `error` (`code`, `message`). Optional
+fields are `session_id`, `turn_id`, `note`, and nonnegative `active_tools`; omit
+the tool count when unknown. Unknown fields are rejected. Do not put credentials,
+prompts, tool arguments or outputs in observations. The current agent context is
+required; closed/cancelled assignments reject updates. Reporting an observation
+never substitutes for `agent finish`. Both custom `process` and `external`
+lifecycles retain their existing termination rules.
+
 `task next --after 24h` commits a new time at the moment of the request. Its future execution survives the current run failing. A subsequent task/config profile update replaces upcoming timing and rejects scheduling callbacks from older revisions. `disable` persists across updates; changing the next time does not implicitly enable a disabled task.
 
 A script's zero exit code and successful agent outcomes are all needed for whole-run success, except failures explicitly handled by their requester. Report an agent outcome with `agent finish --outcome success|failed --summary TEXT`. Reporting ends the assignment; the terminal can remain open. Closing an agent terminal without reporting yields unconfirmed work only when its lifecycle establishes that execution ended.

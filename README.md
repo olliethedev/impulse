@@ -46,6 +46,7 @@ Use `impulse task rename indexing --name biomogging-google-indexing` to rename a
 | --- | --- |
 | `impulse run list [--task TASK]` | List runs, optionally for one task. |
 | `impulse run show RUN` | Inspect a run, its agents, outcomes, and events. Use `--current` instead of `RUN` inside a run. |
+| `impulse run diagnose RUN` | Explain runner liveness, observed harness failures, missing evidence, recovery commands, and the preserved next schedule. Also accepts `--current`. Read-only. |
 | `impulse run wait RUN` | Wait for the run to end; the exit code reflects its outcome. |
 | `impulse run logs RUN [--follow]` | Read or follow execution logs. Use `--current` instead of `RUN` inside a run. |
 | `impulse run stop RUN [--force]` | Request cancellation of the script and all its agents, including queued and nested requests. Future automatic runs remain enabled. |
@@ -58,6 +59,7 @@ Use `impulse task rename indexing --name biomogging-google-indexing` to rename a
 | --- | --- | --- |
 | `impulse agent request --instructions TEXT` | Request an agent and wait for its outcome. Alternatively use `--instructions-file FILE`; add `--no-wait` to continue immediately. | A script or agent executing in an Impulse run. |
 | `impulse agent show AGENT_ID` | Inspect an agent's status and outcome. | None. |
+| `impulse agent observe --file FILE` | Record optional structured harness progress or a terminal turn error. This never reports an assignment outcome. | Current agent. |
 | `impulse agent wait AGENT_ID` | Wait for an agent's outcome. | None. |
 | `impulse agent finish --outcome success\|failed --summary TEXT` | Report the current agent's own outcome and summary. | The executing agent's assignment. |
 | `impulse agent handle AGENT_ID --reason TEXT` | Acknowledge recovery from a failed direct child, preserving its original failure in history. | The script or agent that requested that child. |
@@ -94,6 +96,8 @@ An agent request belongs to the current run, including with `--no-wait`. To laun
 | `impulse history prune [--task TASK]` | Preview eligible history/log cleanup. Add `--apply` to delete eligible records and logs. |
 
 `run confirm-ended` and `agent resolve` are operator commands used outside a run context, after verifying what happened. See [recovery procedures](docs/operations.md#timing-failures-and-recovery).
+
+Start a failure investigation with `impulse run diagnose RUN --json`. Supported Codex launches observe their private app-server; Claude Code 2.1.269+ uses session-scoped observation hooks. Older launches and custom harnesses retain their existing lifecycle behavior, and diagnostics identify unavailable evidence. Custom wrappers can opt into `agent observe`. A failed model turn raises an alert while execution remains tracked: tools and external work may still be running. No automatic retry, model change, or schedule change follows an observation.
 
 ## Build and install
 

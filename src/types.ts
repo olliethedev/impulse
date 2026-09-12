@@ -39,10 +39,25 @@ export interface Task {
   registered_clock?: ClockSample;
 }
 export interface Context { run_id: string; task_id: string; revision: number; agent_id?: string; token: string }
+/** Harness progress is evidence, not an assignment outcome or proof that external work ended. */
+export interface Observation {
+  state: "active" | "idle" | "failed" | "unavailable";
+  session_id?: string;
+  turn_id?: string;
+  active_tools?: number;
+  error?: { code: string; message: string };
+  note?: string;
+}
+export interface HarnessObservation extends Observation {
+  source: "codex-app-server" | "claude-hooks" | "wrapper";
+  at: number;
+}
 export interface Execution {
   status: Status; ticket: string; runner_nonce: string | null; pid: number | null;
   boot_id: string | null; heartbeat: number | null; launch_at: number | null;
   exit_code: number | null; ended_at: number | null; error: string | null;
+  observation?: HarnessObservation;
+  last_harness_failure?: HarnessObservation;
 }
 export interface Run {
   id: string; task_id: string; revision: number; definition: Definition; profile: ExecutionProfile;

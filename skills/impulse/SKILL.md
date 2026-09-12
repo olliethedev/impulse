@@ -38,7 +38,11 @@ Requests wait by default; `--no-wait` still attaches the agent to the same run. 
 
 Report `success` or `failed` with a truthful summary using `agent finish`. Exiting a terminal does not report an outcome. A completed assignment context cannot schedule or request more work. If a child failed and you completed a fallback, `agent handle ID --reason TEXT` preserves the failure while marking it handled. Otherwise its failure prevents whole-run success.
 
-Use `run show`, `run logs`, and `agent show` to inspect evidence. A full nested-agent limit returns exit 5 immediately: schedule future work or return control rather than waiting while holding every slot. There is no automatic execution cutoff.
+Start failure investigations with `run diagnose RUN --json` (or `--current` inside a run). It reports the runner, harness observations and their age, prior failure, missing evidence, preserved next time, and conditional recovery commands. Use `run show`, `run logs`, and `agent show` for further evidence. A failed turn, idle session, or zero observed tools does not establish that external work ended. Older launches and unsupported harnesses explicitly lack structured observations. Custom wrappers can optionally report progress with `agent observe --file FILE`; this never replaces `agent finish`.
+
+After independently verifying all owned/external work has ended and the runner is absent, `run confirm-ended RUN --reason TEXT` moves uncertain work to ended/unconfirmed status. Then `agent resolve ID --outcome success|failed --reason TEXT` records the verified outcome. Both are operator commands outside any run context. Preserve accepted next times and external-effect receipts; do not repeat work merely to clear a warning. Observations never trigger automatic retries or change models.
+
+A full nested-agent limit returns exit 5 immediately: schedule future work or return control rather than waiting while holding every slot. There is no automatic execution cutoff.
 
 All commands support `--json`. Errors have `ok:false` and an error code. Waited work can return `ok:true` with exit 10 (failed), 11 (unconfirmed), or 12 (interrupted/cancelled). Inspect the structured status. Use `--request-id KEY` when retrying a mutation after uncertain delivery; keep the input identical.
 

@@ -52,6 +52,12 @@ _Avoid_: Separate scheduled task, harness-internal subagent
 An agent's explicit report of success or failure with a summary of its work. Reporting an outcome does not require closing the terminal session.
 _Avoid_: Terminal exit status
 
+**Harness observation**:
+Structured evidence about an agent harness's progress or failed turn, kept
+separately from runner liveness and the agent's explicit outcome. It can explain
+an alert but does not prove that tools or external work ended.
+_Avoid_: Successful run, termination proof, retry instruction
+
 **Handled agent failure**:
 An agent failure that its requesting script or agent explicitly acknowledges as recovered from, allowing the overall run to succeed once all required work is resolved successfully. The original agent failure remains in history.
 _Avoid_: Successful agent outcome, ignored failure

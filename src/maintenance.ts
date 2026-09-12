@@ -81,6 +81,7 @@ export function prune(engine: Engine, taskRef?: string, apply = false) {
           files.push(join(engine.store.paths.launches, `${id}.process.json`), join(engine.store.paths.launches, `${id}.control.json`));
           files.push(join(engine.store.paths.launches, `${id}.process-outcome.json`));
           files.push(join(engine.store.paths.launches, `${id}.instructions.md`));
+          files.push(join(engine.store.paths.launches, `${id}.claude-settings.json`));
         }
       }
       const existing = files.filter(existsSync), bytes = existing.reduce((sum, file) => sum + statSync(file).size, 0);

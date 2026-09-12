@@ -20,6 +20,7 @@ test.skipIf(process.platform === "win32")("built-in runners set project trust be
     writeFileSync(fixture, `
 import { readFileSync, writeFileSync } from "node:fs";
 if (process.argv.includes("--help")) { console.log("fixture harness"); process.exit(0); }
+if (process.argv.includes("--version")) { console.log("2.0.0 fixture harness"); process.exit(0); }
 const harness = process.argv[2];
 const config = harness === "codex" ? Bun.TOML.parse(readFileSync(process.env.CODEX_HOME + "/config.toml", "utf8")) : JSON.parse(readFileSync(process.env.CLAUDE_CONFIG_DIR + "/.claude.json", "utf8"));
 const entry = config.projects?.[process.cwd()];
