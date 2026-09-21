@@ -19,7 +19,11 @@ async function setup() {
 }
 afterEach(async () => {
   for (const home of homes.splice(0)) {
-    await invoke(home, ["daemon", "stop"]); await Bun.sleep(700); rmSync(home, { recursive: true, force: true });
+    await invoke(home, ["daemon", "stop"]);
+    // Windows holds the state files open until the stopped daemon has fully exited.
+    for (let i = 0; ; i++) {
+      try { rmSync(home, { recursive: true, force: true }); break; } catch (error) { if (i === 40) throw error; await Bun.sleep(100); }
+    }
   }
 });
 test("observation callbacks validate input and preserve receipt, scope and read-only diagnosis contracts", async () => {
