@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Engine, type Ticket } from "./engine.ts";
@@ -8,7 +8,7 @@ import { paths, type Paths } from "./paths.ts";
 import { ImpulseError, message } from "./errors.ts";
 import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, selfCommand, stopChild, type ProcessHandle } from "./platform.ts";
 import { assignmentInstructions, launchTerminal, substitute, type LaunchDescriptor } from "./adapters.ts";
-import { deliverPending, prune } from "./maintenance.ts";
+import { deliverPending, prune, reapBackends } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
 import { terminalProcess, type TerminalProcess, type ExecutionExit } from "./terminal-process.ts";
 import { prepareProjectTrust } from "./project-trust.ts";
@@ -46,7 +46,7 @@ export async function daemon(p: Paths) {
         catch (error) { engine.launchFailed(ticket, message(error)); }
       }
       if (!delivery) delivery = deliverPending(engine).catch(error => console.error(message(error))).finally(() => { delivery = undefined; });
-      if (Date.now() - lastPrune > 3600000) { prune(engine, undefined, true); lastPrune = Date.now(); }
+      if (Date.now() - lastPrune > 3600000) { reapBackends(engine); prune(engine, undefined, true); lastPrune = Date.now(); }
       await Bun.sleep(500);
     }
   } catch (error) {
@@ -96,8 +96,15 @@ export async function runner(file: string) {
   let observer: ReturnType<typeof observeCodex> | undefined, codexSocket: string | undefined;
   const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
   const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
+  const backendFile = join(descriptor.paths.launches, `${ticket.id}.backend.json`);
   async function waitForOwnedGroups() {
     if (!external && process.platform !== "win32") while ((child?.pid && groupAlive(child.pid)) || (server?.pid && groupAlive(server.pid))) await Bun.sleep(200);
+  }
+  /** Drop the record only once the backend is gone, so a surviving one stays reapable. */
+  function releaseBackend() {
+    if (!server?.pid || groupAlive(server.pid)) return;
+    rmSync(backendFile, { force: true });
+    if (codexSocket) rmSync(codexSocket, { force: true });
   }
   try {
     const run = engine.claim(ticket, nonce, process.pid, bootId());
@@ -151,6 +158,9 @@ export async function runner(file: string) {
         const socket = join(descriptor.paths.launches, `${randomUUID().slice(0, 8)}.sock`);
         if (Buffer.byteLength(socket) > 100) throw new Error("Impulse state path is too long for a private Codex socket; use a shorter IMPULSE_HOME");
         server = spawn("codex", ["app-server", "--listen", `unix://${socket}`], { cwd: run.definition.cwd, env, detached: true, stdio: ["ignore", "ignore", "inherit"] });
+        // A detached backend does not receive the SIGHUP that closes this runner's terminal, and no
+        // other state holds its pid; recording it before the socket wait keeps every exit reapable.
+        if (server.pid) privateJson(backendFile, { pid: server.pid, runner: process.pid, boot_id: bootId(), socket });
         let serverError: string | undefined;
         server.on("error", error => { serverError = message(error); });
         for (let i = 0; i < 150 && !existsSync(socket) && !serverError && server.exitCode === null; i++) {
@@ -202,7 +212,7 @@ export async function runner(file: string) {
     } catch { uncertain = true; }
     try { engine.ended(ticket, nonce, null, message(error), uncertain); } catch { /* A duplicate ticket must not mutate its original runner. */ }
   } finally {
-    await observer?.close(); terminal?.close(); if (heartbeat) clearInterval(heartbeat); if (log !== undefined) closeSync(log); store.close();
+    await observer?.close(); terminal?.close(); if (heartbeat) clearInterval(heartbeat); releaseBackend(); if (log !== undefined) closeSync(log); store.close();
   }
   if (descriptor.keep_open && process.stdin.isTTY) {
     console.log("\nImpulse assignment ended. This terminal remains open; press Enter to close the runner.");

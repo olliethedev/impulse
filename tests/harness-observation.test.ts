@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { shellQuote } from "../src/platform.ts";
+import { alive, shellQuote } from "../src/platform.ts";
 
 test.skipIf(process.platform === "win32")("built-in and custom harness failures remain observable while their frontends stay open", async () => {
   const home = mkdtempSync(join(tmpdir(), "impulse ' $-")), bin = join(home, "bin"); mkdirSync(bin);
@@ -47,6 +47,14 @@ test.skipIf(process.platform === "win32")("built-in and custom harness failures 
       expect(diagnosis.data.components[0].observation.source).toBe(source);
       expect(JSON.stringify(diagnosis)).not.toContain("PRIVATE PROMPT");
       expect(JSON.stringify(diagnosis)).not.toContain('"token"');
+      const launches = join(home, "state", "launches");
+      const suffixed = (suffix: string) => readdirSync(launches).filter(name => name.endsWith(suffix));
+      if (harness === "codex") {
+        const [name] = suffixed(".backend.json");
+        expect(name).toBeDefined();
+        const record = JSON.parse(readFileSync(join(launches, name!), "utf8"));
+        expect({ backend: alive(record.pid), runner: alive(record.runner) }).toEqual({ backend: true, runner: true });
+      }
       expect((await invoke(["run", "show", id])).data.events).toEqual(before.events);
       const next = diagnosis.data.schedule.next;
       writeFileSync(join(cwd, "exit"), "done");
@@ -58,6 +66,11 @@ test.skipIf(process.platform === "win32")("built-in and custom harness failures 
       }
       expect(after.status).toBe(harness === "external" ? "uncertain" : "failed");
       expect((await invoke(["task", "show", harness])).data.next).toEqual(next);
+      if (harness === "codex") {
+        for (let i = 0; i < 100 && suffixed(".backend.json").length; i++) await Bun.sleep(100);
+        expect(suffixed(".backend.json")).toEqual([]);
+        expect(suffixed(".sock")).toEqual([]);
+      }
       if (harness === "external") {
         expect((await invoke(["agent", "resolve", after.root_agent, "--outcome", "failed", "--reason", "Cannot resolve live uncertainty"])).code).toBe(4);
         expect((await invoke(["run", "confirm-ended", id, "--reason", "Fixture exited and has no external work"])).code).toBe(0);
