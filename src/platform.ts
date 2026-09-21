@@ -53,6 +53,17 @@ export function groupAlive(pgid: number): boolean {
   if (process.platform === "darwin") return runCommand(["ps", "-axo", "pgid=,stat="]).split("\n").some(line => { const [group, state] = line.trim().split(/\s+/); return Number(group) === pgid && !state?.startsWith("Z"); });
   return alive(pgid);
 }
+/**
+ * Confirm a recorded pid still runs the command Impulse spawned, so a recycled pid is never
+ * signalled. Private Codex backends exist only off Windows, where no record is ever written.
+ */
+export function commandMatches(pid: number, argument: string): boolean {
+  try {
+    if (process.platform === "linux") return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").includes(argument);
+    if (process.platform === "darwin") return runCommand(["ps", "-p", String(pid), "-o", "command="]).includes(argument);
+    return false;
+  } catch { return false; }
+}
 let darwinElapsed: (() => number) | undefined;
 export function elapsedClock(): ClockSample | undefined {
   if (process.platform === "linux") return { boot_id: bootId(), at: Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]) * 1000 };

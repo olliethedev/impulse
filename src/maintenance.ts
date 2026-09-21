@@ -1,10 +1,10 @@
-import { existsSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { Engine } from "./engine.ts";
 import { duration } from "./schedule.ts";
 import { message, requireThat } from "./errors.ts";
-import { alive, bootId, powershell } from "./platform.ts";
+import { alive, bootId, commandMatches, powershell, stopChild } from "./platform.ts";
 import type { Notification } from "./types.ts";
 
 async function send(command: string[], input: string): Promise<void> {
@@ -61,6 +61,33 @@ export function retryNotification(engine: Engine, id: string): Notification {
     requireThat(n.status !== "delivering", "DELIVERY_ACTIVE", "Notification delivery is active", 4);
     n.status = "pending"; n.error = null; engine.store.put("notifications", n); return n;
   });
+}
+interface BackendRecord { pid: number; runner: number; boot_id: string; socket: string }
+/**
+ * A private Codex backend is detached, so closing its runner's terminal leaves it running while the
+ * assignment already holds a settled status that reconciliation no longer visits. Its record is the
+ * only remaining reference, so a runner that died before its own teardown is resolved here instead.
+ */
+export function reapBackends(engine: Engine, apply = true) {
+  const launches = engine.store.paths.launches, suffix = ".backend.json";
+  const reaped: { id: string; pid: number; running: boolean }[] = [];
+  for (const name of existsSync(launches) ? readdirSync(launches) : []) {
+    if (!name.endsWith(suffix)) continue;
+    const file = join(launches, name);
+    let record: BackendRecord;
+    try { record = JSON.parse(readFileSync(file, "utf8")) as BackendRecord; } catch { continue; }
+    const booted = record.boot_id === bootId();
+    if (booted && alive(record.runner)) continue;
+    // A pid from an earlier boot, or a recycled one, can belong to unrelated work by now.
+    const running = booted && alive(record.pid) && commandMatches(record.pid, `unix://${record.socket}`);
+    if (apply) {
+      if (running) { try { stopChild({ pid: record.pid, exitCode: null }, false, true); } catch (error) { console.error(`Impulse reaper: ${message(error)}`); } }
+      rmSync(file, { force: true });
+      if (record.socket) rmSync(record.socket, { force: true });
+    }
+    reaped.push({ id: name.slice(0, -suffix.length), pid: record.pid, running });
+  }
+  return { applied: apply, reaped };
 }
 export function prune(engine: Engine, taskRef?: string, apply = false) {
   return engine.store.atomic(() => {
