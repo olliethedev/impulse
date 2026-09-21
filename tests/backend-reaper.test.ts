@@ -23,7 +23,8 @@ function record(home: string, id: string, value: unknown) {
 }
 const fixtureLaunches = (home: string) => join(home, "state", "launches");
 
-test("stops a backend whose runner died before its own teardown", async () => {
+// A runner only spawns a private backend off Windows, so no record ever exists there to reap.
+test.skipIf(process.platform === "win32")("stops a backend whose runner died before its own teardown", async () => {
   const f = fixture();
   const socket = join(fixtureLaunches(f.home), "abcd1234.sock");
   writeFileSync(socket, "");
@@ -41,7 +42,7 @@ test("stops a backend whose runner died before its own teardown", async () => {
   f.close();
 });
 
-test("leaves a backend alone while its runner still owns teardown", async () => {
+test.skipIf(process.platform === "win32")("leaves a backend alone while its runner still owns teardown", async () => {
   const f = fixture();
   const socket = join(fixtureLaunches(f.home), "beef5678.sock");
   writeFileSync(socket, "");
@@ -57,7 +58,7 @@ test("leaves a backend alone while its runner still owns teardown", async () => 
   child.kill("SIGKILL"); f.close();
 });
 
-test("clears a record from an earlier boot without signalling a reused pid", async () => {
+test.skipIf(process.platform === "win32")("clears a record from an earlier boot without signalling a reused pid", async () => {
   const f = fixture();
   const socket = join(fixtureLaunches(f.home), "cafe9012.sock");
   writeFileSync(socket, "");
@@ -72,7 +73,7 @@ test("clears a record from an earlier boot without signalling a reused pid", asy
   child.kill("SIGKILL"); f.close();
 });
 
-test("reports without changing anything when not applying", async () => {
+test.skipIf(process.platform === "win32")("reports without changing anything when not applying", async () => {
   const f = fixture();
   const socket = join(fixtureLaunches(f.home), "dead3456.sock");
   writeFileSync(socket, "");
