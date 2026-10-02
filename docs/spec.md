@@ -81,7 +81,7 @@ These remain illustrative design samples; replace the sample initial timestamp b
 
 ```sh
 impulse task validate ./impulse.toml --json
-impulse task register ./impulse.toml --name indexing --json
+impulse task register ./impulse.toml --name indexing --harness codex --json
 impulse task show indexing --json
 impulse task update indexing --json
 impulse task next indexing --after 24h --json

@@ -24,7 +24,7 @@ try {
   const file = join(home, "smoke.toml");
   const command = process.platform === "win32" ? ["cmd.exe", "/d", "/c", "echo compiled-smoke"] : ["/bin/echo", "compiled-smoke"];
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "smoke", cwd: ".", work: { kind: "script", command }, first_run: { kind: "now" } })!);
-  await cli(["task", "register", file]);
+  await cli(["task", "register", file, "--harness", "codex"]);
   let task;
   for (let i = 0; i < 100; i++) { task = await cli(["task", "show", "smoke"]); if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
   const logs = await cli(["run", "logs", task.latest_run.id]);
@@ -41,7 +41,7 @@ try {
   await cli(["config", "apply", settings]);
   const observedFile = join(home, "observed-smoke.toml");
   writeFileSync(observedFile, Bun.TOML.stringify({ schema_version: 1, name: "observed-smoke", cwd: ".", work: { kind: "agent", instructions: "Observe compiled fixture" }, first_run: { kind: "now" } })!);
-  await cli(["task", "register", observedFile]);
+  await cli(["task", "register", observedFile, "--harness", "fixture"]);
   let evidence;
   for (let i = 0; i < 100; i++) {
     task = await cli(["task", "show", "observed-smoke"]);

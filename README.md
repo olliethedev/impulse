@@ -25,7 +25,7 @@ Every public command is listed below. All support `--json`, and mutations run wi
 | --- | --- |
 | `impulse task validate FILE` | Check a task definition and its references. |
 | `impulse task preview FILE` | Show resolved paths and prospective execution times before registration. |
-| `impulse task register FILE` | Register a task and start the scheduler. Use `--disabled` to register without enabling automatic runs. |
+| `impulse task register FILE --harness NAME` | Register a task and start the scheduler. `--harness` is required (`codex`, `claude-code`, or a custom harness from settings), so the default harness never applies silently. Use `--disabled` to register without enabling automatic runs. |
 | `impulse task list` | List registered tasks. |
 | `impulse task show TASK` | Inspect applied configuration, next run, source-file changes, and the latest run. |
 | `impulse task update TASK` | Apply the edited definition. Use `--file FILE` to relink a moved definition while retaining task identity and history. |
@@ -36,7 +36,7 @@ Every public command is listed below. All support `--json`, and mutations run wi
 | `impulse task run TASK` | Request a manual run and return its ID. Rejects a task that already has active work; preserves explicit future timing unless `--reset-next` is supplied. |
 | `impulse task remove TASK` | Unregister a task with no active run, preserving its source file and history. |
 
-Editing a definition does not apply it: use `task update`. An update replaces upcoming configuration and timing; an older active run can finish but cannot issue new scheduling changes. Registration is idempotent by canonical source path, so registering the same file again does not apply edits or reset timing.
+Editing a definition does not apply it: use `task update`. An update replaces upcoming configuration and timing; an older active run can finish but cannot issue new scheduling changes. Registration is idempotent by canonical source path, so registering the same file again does not apply edits, change the harness, or reset timing. Use `task update TASK --harness NAME` to change an existing task's harness.
 
 Use `impulse task rename indexing --name biomogging-google-indexing` to rename an existing task without replacing its registration. The new name must be unused. The task ID, source file, applied definition, enabled state, next run, and active run contexts stay unchanged. The registered name is local metadata, like `register --name`; changing the definition's `name` does not rename an existing registration. Update any scripts that look up the old name, or use the stable task ID. Retries can use `--request-id KEY` with the original arguments.
 
@@ -164,7 +164,7 @@ after = "24h"
 ```sh
 impulse task validate task.toml
 impulse task preview task.toml
-impulse task register task.toml
+impulse task register task.toml --harness codex
 impulse task show indexing
 ```
 
@@ -195,7 +195,7 @@ timezone = "local"
 ```sh
 impulse task validate .impulse/tasks/website-check.toml
 impulse task preview .impulse/tasks/website-check.toml
-impulse task register .impulse/tasks/website-check.toml
+impulse task register .impulse/tasks/website-check.toml --harness claude-code
 ```
 
 This task runs daily at 09:00 in the computer's local timezone. Calendar schedules retain their clock time; use an IANA timezone to pin a zone. Five numeric cron fields support lists, ranges, steps, and wildcards. Missed occurrences coalesce to one catch-up run by default, and runs of the same task do not overlap.
@@ -216,7 +216,7 @@ Any script or agent can inspect existing tasks and register a definition, even w
 impulse task list --json
 impulse task validate task.toml --json
 impulse task preview task.toml --json
-impulse task register task.toml --json
+impulse task register task.toml --harness claude-code --json
 ```
 
 After editing the definition, apply it with `impulse task update TASK --json`. Outside a run, supply a task name or ID when changing its schedule, for example `impulse task next indexing --after 24h --json`. Register a separate agent task for independent future work; `agent request` needs an existing run.
