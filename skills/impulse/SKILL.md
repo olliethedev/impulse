@@ -18,10 +18,10 @@ Validate and preview a definition before registering it:
 ```sh
 impulse task validate task.toml --json
 impulse task preview task.toml --json
-impulse task register task.toml --json
+impulse task register task.toml --harness claude-code --json
 ```
 
-Registration is idempotent by canonical file path. Editing the file does not apply it: use `impulse task update TASK --json`. Updates replace all upcoming timing and fence old run scheduling callbacks. Read `task show` to inspect applied configuration and drift.
+`--harness` is required on registration: pass the harness the user wants (`codex`, `claude-code`, or a custom harness listed by `impulse config show --json`); when unsure, ask or use the harness you are running in. Registration is idempotent by canonical file path, and re-registering does not change an existing task's harness; use `impulse task update TASK --harness NAME --json`. Editing the file does not apply it: use `impulse task update TASK --json`. Updates replace all upcoming timing and fence old run scheduling callbacks. Read `task show` to inspect applied configuration and drift.
 
 Rename with `impulse task rename TASK --name NAME --json`; do not remove and recreate the task. Renaming preserves the ID, history, timing, enabled state and active contexts, and changes only the local registered name. Update callers using the old name, or use its stable task ID. New terminal tabs include the current task name and a short assignment ID; already-open tabs keep their launch titles.
 

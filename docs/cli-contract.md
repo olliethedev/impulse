@@ -24,7 +24,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `doctor` | Inspect selected executable paths, platform, settings, state access, and scheduler health. Does not launch an agent. |
 | `task validate FILE` | Validate a definition and references without registration or execution. |
 | `task preview FILE [--at TIMESTAMP]` | Show resolved working directory, schedule, and prospective first occurrences without activating anything. |
-| `task register FILE [--name NAME] [--harness NAME] [--terminal NAME] [--disabled]` | Register a source definition and local execution overrides. Return identity, revision, effective choices, and next time. |
+| `task register FILE --harness NAME [--name NAME] [--terminal NAME] [--disabled]` | Register a source definition and local execution overrides. `--harness` is required so the configured default never applies silently; omitting it fails with `MISSING_OPTION` naming the valid harnesses. Return identity, revision, effective choices, and next time. |
 | `task update TASK [--file FILE] [--harness NAME] [--terminal NAME]` | Apply the source file or explicitly relink it, retaining identity/history and replacing upcoming configuration/timing. |
 | `task rename TASK --name NAME` | Change only the registered name. Preserve task ID, history, source/applied definition, revision, enabled/held state, next time and active contexts. Reject a conflicting or empty name. |
 | `task list` / `task show TASK` | Inspect applied state, source path, source drift, latest run, and why the next execution is due, queued, disabled, or awaiting intervention. |

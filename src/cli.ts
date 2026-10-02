@@ -27,7 +27,7 @@ Usage: impulse <group> <command> [arguments] [options]
   startup enable | disable | status
   doctor
   task validate FILE | preview FILE [--at TIME]
-  task register FILE [--name NAME] [--harness NAME] [--terminal NAME] [--disabled]
+  task register FILE --harness NAME [--name NAME] [--terminal NAME] [--disabled]
   task update TASK [--file FILE] [--harness NAME] [--terminal NAME]
                    [--clear-harness] [--clear-terminal]
   task rename TASK --name NAME
@@ -148,8 +148,10 @@ export async function main() {
         result = { valid: true, ...loaded, ...(command === "preview" ? { occurrences } : {}) };
       } else if (command === "register") {
         allow("name", "harness", "terminal", "disabled");
+        const harnesses = ["codex", "claude-code", ...Object.keys(engine.settings().harnesses)];
+        requireThat(option("harness")?.trim(), "MISSING_OPTION", `--harness is required for task register; choose one of: ${harnesses.join(", ")}`);
         const loaded = loadDefinition(needArg());
-        result = mutate(() => engine.register(loaded, { ...(option("name") ? { name: required("name") } : {}), ...(option("harness") ? { harness: required("harness") } : {}), ...(option("terminal") ? { terminal: required("terminal") } : {}), disabled: !!values.disabled }), loaded.hash); await startDaemon(engine);
+        result = mutate(() => engine.register(loaded, { ...(option("name") ? { name: required("name") } : {}), harness: required("harness"), ...(option("terminal") ? { terminal: required("terminal") } : {}), disabled: !!values.disabled }), loaded.hash); await startDaemon(engine);
       } else if (command === "update") {
         allow("file", "harness", "terminal", "clear-harness", "clear-terminal");
         requireThat(!(values["clear-harness"] && option("harness")) && !(values["clear-terminal"] && option("terminal")), "INVALID_OPTION", "Cannot set and clear the same override");

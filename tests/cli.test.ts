@@ -59,7 +59,7 @@ test("observation callbacks validate input and preserve receipt, scope and read-
 test("CLI rename is durable, retryable and separate from definition updates", async () => {
   const home = await setup(), file = join(home, "task.toml"), name = "Bio-Mogging indexing ' \" $()";
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "original", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(0)"] }, first_run: { kind: "now" } })!);
-  const before = (await invoke(home, ["task", "register", file, "--disabled"])).result.data;
+  const before = (await invoke(home, ["task", "register", file, "--harness", "fixture", "--disabled"])).result.data;
   const args = ["task", "rename", "original", "--name", name, "--request-id", "rename-once"];
   const renamed = await invoke(home, args);
   expect(renamed.code).toBe(0);
@@ -74,7 +74,7 @@ test("CLI rename is durable, retryable and separate from definition updates", as
   expect((await invoke(home, ["task", "rename", before.id])).code).toBe(2);
   const otherFile = join(home, "other.toml");
   writeFileSync(otherFile, readFileSync(file, "utf8").replace('name = "original"', 'name = "taken"'));
-  await invoke(home, ["task", "register", otherFile, "--disabled"]);
+  await invoke(home, ["task", "register", otherFile, "--harness", "fixture", "--disabled"]);
   expect((await invoke(home, ["task", "rename", before.id, "--name", "taken"])).result.error.code).toBe("NAME_CONFLICT");
   expect((await invoke(home, ["task", "show", before.id])).result.data.name).toBe(name);
 });
@@ -82,7 +82,7 @@ test("CLI rename is durable, retryable and separate from definition updates", as
 test("CLI launches nested agents using custom profiles and preserves instructions as data", async () => {
   const home = await setup(), file = join(home, "task.toml");
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "nested", cwd: ".", work: { kind: "agent", instructions: "fixture:child\n' \" $(do-not-execute) `literal`" }, first_run: { kind: "now" }, schedule: { kind: "completion", after: "24h" } })!);
-  const registration = await invoke(home, ["task", "register", file, "--disabled"]); expect(registration.code).toBe(0);
+  const registration = await invoke(home, ["task", "register", file, "--harness", "fixture", "--disabled"]); expect(registration.code).toBe(0);
   expect((await invoke(home, ["task", "rename", "nested", "--name", "nested-title-demo"])).code).toBe(0);
   await invoke(home, ["task", "enable", "nested-title-demo", "--now"]);
   let task;
@@ -103,7 +103,7 @@ test("a script callback survives failure through the executable command path", a
   const home = await setup(), script = join(home, "script.ts"), file = join(home, "task.toml");
   writeFileSync(script, `const c=Bun.spawn(${JSON.stringify([...cli, "task", "next", "--after", "24h", "--json"])},{stdout:"inherit",stderr:"inherit"}); if(await c.exited!==0)process.exit(99); console.log("callback committed"); process.exit(7);`);
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "callback", cwd: ".", work: { kind: "script", command: [process.execPath, script] }, first_run: { kind: "now" } })!);
-  await invoke(home, ["task", "register", file]);
+  await invoke(home, ["task", "register", file, "--harness", "fixture"]);
   let task;
   for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "callback"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
   if (task.latest_run.status !== "failed") console.error(JSON.stringify(task.latest_run), (await invoke(home, ["run", "logs", task.latest_run.id])).result.data.log);
@@ -116,7 +116,7 @@ test("stopping dispatch preserves the runner and explicit run cancellation termi
   const home = await setup(), script = join(home, "script.ts"), file = join(home, "task.toml");
   writeFileSync(script, 'console.log("started"); setInterval(() => {}, 1000);');
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "long", cwd: ".", work: { kind: "script", command: [process.execPath, script] }, first_run: { kind: "now" } })!);
-  await invoke(home, ["task", "register", file]);
+  await invoke(home, ["task", "register", file, "--harness", "fixture"]);
   let task;
   for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "long"])).result.data; if (task.latest_run?.script?.pid) break; await Bun.sleep(100); }
   const runId = task.latest_run.id;
@@ -133,11 +133,26 @@ test("invalid setup choices do not apply otherwise valid configuration changes",
   expect((await invoke(home, ["config", "show"])).result.data.defaults.harness).toBe("fixture");
 });
 
+test("registration requires an explicit harness and records it as the task's choice", async () => {
+  const home = await setup(), file = join(home, "task.toml");
+  writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "explicit", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(0)"] }, first_run: { kind: "now" } })!);
+  for (const args of [["task", "register", file, "--disabled"], ["task", "register", file, "--harness", " ", "--disabled"]]) {
+    const missing = await invoke(home, args);
+    expect(missing.code).toBe(2);
+    expect(missing.result).toMatchObject({ ok: false, error: { code: "MISSING_OPTION", message: "--harness is required for task register; choose one of: codex, claude-code, fixture" } });
+  }
+  expect((await invoke(home, ["task", "list"])).result.data).toEqual([]);
+  const registered = (await invoke(home, ["task", "register", file, "--harness", "claude-code", "--disabled"])).result.data;
+  expect(registered).toMatchObject({ overrides: { harness: "claude-code" }, profile: { harness: "claude-code" } });
+  expect((await invoke(home, ["task", "register", file, "--disabled"])).result.error.code).toBe("MISSING_OPTION");
+  expect((await invoke(home, ["task", "register", file, "--harness", "claude-code", "--disabled"])).result.data.id).toBe(registered.id);
+});
+
 test.skipIf(process.platform !== "win32")("Windows batch scripts preserve quoted paths and shell arguments", async () => {
   const home = await setup(), script = join(home, "script with spaces.cmd"), file = join(home, "task.toml");
   writeFileSync(script, '@echo off\r\necho %1\r\n');
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "batch", cwd: ".", work: { kind: "script", command: ["cmd.exe", "/d", "/c", `"${script}" "literal & argument"`] }, first_run: { kind: "now" } })!);
-  await invoke(home, ["task", "register", file]);
+  await invoke(home, ["task", "register", file, "--harness", "fixture"]);
   let task;
   for (let i = 0; i < 100; i++) { task = (await invoke(home, ["task", "show", "batch"])).result.data; if (task.latest_run?.finished_at) break; await Bun.sleep(100); }
   const log = (await invoke(home, ["run", "logs", task.latest_run.id])).result.data.log;
@@ -151,7 +166,7 @@ test("an interrupted notification attempt becomes inspectable and can be explici
   settings.notifications.command = [process.execPath, "-e", `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(marker)},String(process.pid)); await Bun.sleep(10000);`];
   writeFileSync(settingsFile, Bun.TOML.stringify(settings)!); await invoke(home, ["config", "apply", settingsFile]);
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "notify", cwd: ".", work: { kind: "script", command: [process.execPath, "-e", "process.exit(7)"] }, first_run: { kind: "now" } })!);
-  await invoke(home, ["task", "register", file]);
+  await invoke(home, ["task", "register", file, "--harness", "fixture"]);
   let notifier = 0;
   for (let i = 0; i < 150; i++) { try { notifier = Number(readFileSync(marker, "utf8")); if (notifier) break; } catch {} await Bun.sleep(100); }
   expect(notifier).toBeGreaterThan(0);
@@ -175,7 +190,7 @@ test.skipIf(process.platform === "win32")("graceful cancellation retains capacit
   settings.harnesses.fixture.command = [process.execPath, harness, "{launch_file}"];
   writeFileSync(settingsFile, Bun.TOML.stringify(settings)!); await invoke(home, ["config", "apply", settingsFile]);
   writeFileSync(file, Bun.TOML.stringify({ schema_version: 1, name: "resistant", cwd: ".", work: { kind: "agent", instructions: "fixture" }, first_run: { kind: "now" } })!);
-  await invoke(home, ["task", "register", file]);
+  await invoke(home, ["task", "register", file, "--harness", "fixture"]);
   let runId = "";
   try {
     for (let i = 0; i < 100; i++) { const task = (await invoke(home, ["task", "show", "resistant"])).result.data; runId = task.latest_run?.id ?? ""; try { if (readFileSync(marker, "utf8")) break; } catch {} await Bun.sleep(100); }
