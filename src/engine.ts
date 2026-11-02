@@ -182,6 +182,13 @@ export class Engine {
     this.store.put("agents", agent); return agent;
   }
   capacity(): { used: number; limit: number } { return { used: this.store.all("agents").filter(a => ["launching", "running", "stopping", "uncertain"].includes(a.status)).length, limit: this.settings().limits.agents }; }
+  capacityReport() {
+    const agents = this.store.all("agents").filter(a => ["launching", "running", "stopping", "uncertain"].includes(a.status));
+    return { ...this.capacity(), executing: agents.filter(a => a.status !== "uncertain").length,
+      uncertain: agents.filter(a => a.status === "uncertain").map(a => ({ agent_id: a.id, run_id: a.run_id,
+        task_name: this.task(this.run(a.run_id).task_id).name, status: a.status,
+        recovery: a.process_groups ? "owned-process-groups" : "operator-verification" })) };
+  }
   request(context: Context, instructions: string): Agent {
     return this.store.atomic(() => {
       const { run, agent: parent } = this.context(context);
@@ -380,6 +387,17 @@ export class Engine {
       return { cancel: run.cancel, force: run.force, done: !active(execution.status) };
     });
   }
+  trackProcessGroups(ticket: Ticket, nonce: string, groups: number[], startTicks?: number) {
+    return this.store.atomic(() => {
+      const run = this.run(ticket.run_id), execution = ticket.kind === "agent" ? this.agent(ticket.id) : run.script;
+      requireThat(execution?.runner_nonce === nonce && execution.ticket === ticket.ticket, "RUNNER_CHANGED", "Runner identity mismatch", 4);
+      requireThat(active(execution.status) && !execution.process_groups, "EXECUTION_CLOSED", "Process ownership is already recorded or execution ended", 4);
+      requireThat(groups.length > 0 && groups.every(pid => Number.isSafeInteger(pid) && pid > 0), "INVALID_PROCESS_GROUPS", "Owned process groups must be positive PIDs", 4);
+      execution.process_groups = [...new Set(groups)];
+      if (startTicks !== undefined) execution.process_start_ticks = startTicks;
+      if (ticket.kind === "agent") this.store.put("agents", execution as Agent); else { run.script = execution; this.store.put("runs", run); }
+    });
+  }
   observe(context: Context, observation: Observation, source: HarnessObservation["source"] = "wrapper"): Agent {
     return this.store.atomic(() => {
       const { run, task, agent } = this.context(context);
@@ -421,7 +439,7 @@ export class Engine {
         heartbeat: e.heartbeat, heartbeat_age_ms: e.heartbeat === null ? null : Math.max(0, this.now() - e.heartbeat),
         observation: e.observation ?? null, observation_age_ms: e.observation ? Math.max(0, this.now() - e.observation.at) : null,
         last_harness_failure: e.last_harness_failure ?? null,
-        error: e.error, exit_code: e.exit_code, ended_at: e.ended_at,
+        error: e.error, exit_code: e.exit_code, ended_at: e.ended_at, process_groups: e.process_groups ?? null,
         ...(kind === "agent" ? { outcome: (e as Agent).outcome, summary: (e as Agent).summary } : {}) };
     });
     const activeRuns = this.runs(task.id).filter(r => active(r.status)).map(r => r.id);
@@ -442,6 +460,7 @@ export class Engine {
       error ??= execution.observation?.state === "failed" ? execution.observation.error?.message ?? "Harness reported a failed turn" : null;
       execution.exit_code = exitCode; execution.error = error;
       if (external) {
+        delete execution.process_groups;
         if (execution.status !== "uncertain") this.executionUncertain(run, ticket.id);
         execution.status = "uncertain";
       }
@@ -466,7 +485,7 @@ export class Engine {
       this.store.put("notifications", { id: id("notification"), task_id: task.id, task_name: task.name, run_id: run.id, outcome: "unconfirmed", summary: `Execution liveness is uncertain. Automatic replacement is held; inspect with impulse run diagnose ${run.id} before resolving it.`, at: this.now(), status: "pending", error: null });
     }
   }
-  reconcile(bootId: string, alive: (pid: number) => boolean) {
+  reconcile(bootId: string, alive: (pid: number) => boolean, groupsEnded?: (groups: number[], context: Pick<Context, "run_id" | "agent_id"> & { start_ticks?: number | undefined }) => boolean) {
     this.store.atomic(() => {
       for (const run of this.runs().filter(r => active(r.status))) {
         const components = [...this.agents(run.id), ...(run.script ? [run.script] : [])];
@@ -476,7 +495,14 @@ export class Engine {
           const previousStatus = component.status;
           if (rebooted) { component.status = run.cancel ? "cancelled" : "interrupted"; component.ended_at = this.now(); }
           else if (component.status === "queued" || component.launch_at === null) continue;
-          else if ((component.pid && !alive(component.pid) && this.now() - (component.heartbeat ?? component.launch_at) > 15000) || (!component.pid && this.now() - component.launch_at > 30000)) component.status = "uncertain";
+          else if ((component.pid && !alive(component.pid) && this.now() - (component.heartbeat ?? component.launch_at) > 15000) || (!component.pid && this.now() - component.launch_at > 30000)) {
+            const context = { run_id: run.id, start_ticks: component.process_start_ticks, ...("id" in component ? { agent_id: String(component.id) } : {}) };
+            if (component.process_groups && groupsEnded?.(component.process_groups, context)) {
+              component.status = run.cancel ? "cancelled" : "id" in component ? "unconfirmed" : "interrupted";
+              component.ended_at = this.now();
+              this.event(run.task_id, run.id, "owned_execution_ended", { component: "id" in component ? component.id : run.id, process_groups: component.process_groups });
+            } else component.status = "uncertain";
+          }
           if (component.status === "uncertain" && previousStatus !== "uncertain")
             this.executionUncertain(run, "id" in component ? (component as Agent).id : run.id);
           if ("id" in component) this.store.put("agents", component as Agent); else run.script = component;

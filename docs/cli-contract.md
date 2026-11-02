@@ -197,6 +197,8 @@ The first valid outcome closes that assignment. Repeating the identical outcome 
 
 A parent can finish its own assignment while children continue, but the run remains active until all required work is resolved. The parent's slot can be released while unresolved descendants retain their own slots. An unhandled child failure prevents overall success even if the script exits zero or its parent reports success. Script failure is not repaired merely by a child's success; the script must handle its own error and finish successfully.
 
+`doctor` keeps `capacity.used` and `capacity.limit` and adds `capacity.executing` (launching/running/stopping) and `capacity.uncertain` (assignment IDs, run IDs, task names, and recovery evidence). It is read-only. `run diagnose` includes recorded process groups. A missing runner alone does not release a slot: new POSIX process-owned launches require termination evidence for every recorded group, with an additional assignment-identity process check on Linux. Recovery retains `unconfirmed` when no outcome was reported and leaves accepted next times intact. Older or incomplete launches, external work, Windows runner loss, and failed inspection remain uncertain.
+
 Once all work has ended, an unconfirmed child makes the run unconfirmed unless a stronger explicit terminal condition such as cancellation or failure applies. All component outcomes remain visible. Manual resolution is recorded as a separate operator assertion; if it establishes the current run's successful completion, use the resolution time as its new completion anchor. Resolving an older historical run never rewinds a newer schedule.
 
 ## Setup, profiles, and skill packaging

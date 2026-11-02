@@ -34,11 +34,13 @@ impulse agent request --instructions "Investigate the failure and finish the pen
 impulse agent finish --outcome success --summary "Describe the verified result" --json
 ```
 
-Requests wait by default; `--no-wait` still attaches the agent to the same run. The request uses Impulse's configured harness and terminal. Agent requests are general instructions, not an automatic repair policy. Expected quota waits should set the next time; do not invent an error or retry loop.
+Requests wait by default; `--no-wait` still attaches the agent to the same run. The request uses Impulse's configured harness and terminal. Agent requests are general instructions, not an automatic repair policy. When quota prevents completion, save progress and external-effect receipts. If a retry is authorized and its reset time is known, set the next time, then report `failed` with a truthful summary. Otherwise report the block without inventing a retry time.
 
 Report `success` or `failed` with a truthful summary using `agent finish`. Exiting a terminal does not report an outcome. A completed assignment context cannot schedule or request more work. If a child failed and you completed a fallback, `agent handle ID --reason TEXT` preserves the failure while marking it handled. Otherwise its failure prevents whole-run success.
 
 Start failure investigations with `run diagnose RUN --json` (or `--current` inside a run). It reports the runner, harness observations and their age, prior failure, missing evidence, preserved next time, and conditional recovery commands. Use `run show`, `run logs`, and `agent show` for further evidence. A failed turn, idle session, or zero observed tools does not establish that external work ended. Older launches and unsupported harnesses explicitly lack structured observations. Custom wrappers can optionally report progress with `agent observe --file FILE`; this never replaces `agent finish`.
+
+On POSIX, new process-owned launches persist their complete process groups. When a runner disappears, Impulse releases its slot only after those groups have ended; Linux also checks processes carrying the assignment identity. The outcome stays `unconfirmed`, and existing next times remain intact. Legacy/incomplete launches, external lifecycles, Windows runner loss, and unavailable termination evidence remain uncertain. `doctor` separates executing capacity from uncertain assignments and identifies those needing operator verification.
 
 After independently verifying all owned/external work has ended and the runner is absent, `run confirm-ended RUN --reason TEXT` moves uncertain work to ended/unconfirmed status. Then `agent resolve ID --outcome success|failed --reason TEXT` records the verified outcome. Both are operator commands outside any run context. Preserve accepted next times and external-effect receipts; do not repeat work merely to clear a warning. Observations never trigger automatic retries or change models.
 

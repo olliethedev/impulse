@@ -200,6 +200,8 @@ impulse task register .impulse/tasks/website-check.toml --harness claude-code
 
 This task runs daily at 09:00 in the computer's local timezone. Calendar schedules retain their clock time; use an IANA timezone to pin a zone. Five numeric cron fields support lists, ranges, steps, and wildcards. Missed occurrences coalesce to one catch-up run by default, and runs of the same task do not overlap.
 
+`impulse doctor` separates executing slots from uncertain assignments and lists the task names holding them. New POSIX process-owned launches recover abandoned runner slots automatically after their recorded process groups end; Linux also checks detached processes carrying the assignment identity. Missing outcomes remain unconfirmed. Older launches and external work still need operator verification; see [recovery procedures](docs/operations.md#timing-failures-and-recovery).
+
 The agent must [report its outcome](#report-an-agent-outcome). Reporting releases its capacity slot and lets the terminal remain open. The default global limit is 10 agents, configurable in settings. There is no automatic execution cutoff.
 
 New built-in terminal tabs include the registered task name and a short assignment ID, for example `Impulse: website-check [b925a2b8]`. Long names are shortened and control characters removed from the title. Nested agents use the task's current registered name when launched. A rename affects future tabs; already-open tabs retain their launch title. Custom terminal adapters receive the name as `task_name` in their launch descriptor and can choose their own title.

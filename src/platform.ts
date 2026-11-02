@@ -1,9 +1,9 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, renameSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { ImpulseError } from "./errors.ts";
 import { uptime } from "node:os";
-import type { ClockSample } from "./types.ts";
+import type { ClockSample, Context } from "./types.ts";
 
 declare const IMPULSE_COMPILED: boolean | undefined;
 export function selfCommand(): string[] {
@@ -46,12 +46,46 @@ export function groupAlive(pgid: number): boolean {
         const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
         const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
         if (Number(fields[2]) === pgid && fields[0] !== "Z" && fields[0] !== "X") return true;
-      } catch { /* A process may exit while enumerating. */ }
+      } catch (error) {
+        if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      }
     }
     return false;
   }
   if (process.platform === "darwin") return runCommand(["ps", "-axo", "pgid=,stat="]).split("\n").some(line => { const [group, state] = line.trim().split(/\s+/); return Number(group) === pgid && !state?.startsWith("Z"); });
   return alive(pgid);
+}
+export function processStartTicks(pid: number): number | undefined {
+  if (process.platform !== "linux") return undefined;
+  const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+}
+export function processGroupsEnded(groups: number[], context?: Pick<Context, "run_id" | "agent_id"> & { start_ticks?: number | undefined }): boolean {
+  if (process.platform === "win32") return false;
+  try {
+    if (!groups.length || groups.some(group => groupAlive(group))) return false;
+    // Tools can create another process group while retaining their assignment environment.
+    if (process.platform === "linux" && context) {
+      if (context.start_ticks === undefined) return false;
+      const marker = context.agent_id ? `IMPULSE_AGENT_ID=${context.agent_id}` : `IMPULSE_RUN_ID=${context.run_id}`;
+      const entries = readdirSync("/proc");
+      for (const entry of entries) {
+        if (!/^\d+$/.test(entry)) continue;
+        try {
+          if (statSync(`/proc/${entry}`).uid !== process.getuid!() || !alive(Number(entry))) continue;
+          if (processStartTicks(Number(entry))! < context.start_ticks) continue;
+          if (readFileSync(`/proc/${entry}/environ`, "utf8").split("\0").includes(marker)) return false;
+        } catch (error) {
+          if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+        }
+      }
+      // A tool may fork while its parent exits during inspection; check again next tick.
+      const before = new Set(entries);
+      if (readdirSync("/proc").some(entry => /^\d+$/.test(entry) && !before.has(entry))) return false;
+    }
+    return true;
+  }
+  catch { return false; }
 }
 /**
  * Confirm a recorded pid still runs the command Impulse spawned, so a recycled pid is never

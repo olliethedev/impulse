@@ -138,7 +138,7 @@ export async function main() {
       const settings = engine.settings(), harness = settings.defaults.harness, terminal = settings.defaults.terminal;
       const harnessCommand = settings.harnesses[harness]?.command[0] ?? (harness === "claude-code" ? "claude" : harness);
       const terminalCommand = settings.terminals[terminal]?.command[0] ?? ({ "terminal-app": "osascript", "windows-terminal": "wt.exe", yakuake: Bun.which("qdbus6") ? "qdbus6" : "qdbus" }[terminal] ?? terminal);
-      result = { version: "0.1.0", platform: process.platform, architecture: process.arch, paths: p, executable: selfCommand(), harness: { name: harness, executable: Bun.which(harnessCommand!) }, terminal: { name: terminal, executable: Bun.which(terminalCommand!) }, capacity: engine.capacity(), daemon: engine.lease(), settings_source: join(p.config, "settings.toml"), settings_note: "Settings in SQLite are applied; edit settings.toml then run config apply to change them." };
+      result = { version: "0.1.0", platform: process.platform, architecture: process.arch, paths: p, executable: selfCommand(), harness: { name: harness, executable: Bun.which(harnessCommand!) }, terminal: { name: terminal, executable: Bun.which(terminalCommand!) }, capacity: engine.capacityReport(), daemon: engine.lease(), settings_source: join(p.config, "settings.toml"), settings_note: "Settings in SQLite are applied; edit settings.toml then run config apply to change them." };
     } else if (group === "task") {
       if (command === "validate" || command === "preview") {
         allow(...(command === "preview" ? ["at"] : []));

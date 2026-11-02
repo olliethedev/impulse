@@ -6,7 +6,7 @@ import { Engine, type Ticket } from "./engine.ts";
 import { Store } from "./store.ts";
 import { paths, type Paths } from "./paths.ts";
 import { ImpulseError, message } from "./errors.ts";
-import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, selfCommand, stopChild, type ProcessHandle } from "./platform.ts";
+import { alive, bootId, detach, elapsedClock, groupAlive, privateJson, processGroupsEnded, processStartTicks, selfCommand, stopChild, type ProcessHandle } from "./platform.ts";
 import { assignmentInstructions, launchTerminal, substitute, type LaunchDescriptor } from "./adapters.ts";
 import { deliverPending, prune, reapBackends } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
@@ -39,7 +39,7 @@ export async function daemon(p: Paths) {
   process.on("SIGTERM", () => { exiting = true; }); process.on("SIGINT", () => { exiting = true; });
   try {
     while (!exiting) {
-      engine.reconcile(boot, alive);
+      engine.reconcile(boot, alive, processGroupsEnded);
       const tickets = engine.tick(owner, lease.generation, boot);
       for (const ticket of tickets) {
         try { await launch(engine, ticket); }
@@ -97,8 +97,11 @@ export async function runner(file: string) {
   const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
   const outcomeFile = join(descriptor.paths.launches, `${ticket.id}.process-outcome.json`);
   const backendFile = join(descriptor.paths.launches, `${ticket.id}.backend.json`);
+  const startTicks = processStartTicks(process.pid);
   async function waitForOwnedGroups() {
-    if (!external && process.platform !== "win32") while ((child?.pid && groupAlive(child.pid)) || (server?.pid && groupAlive(server.pid))) await Bun.sleep(200);
+    const groups = [child?.pid, server?.pid].filter((pid): pid is number => !!pid);
+    const context = { run_id: ticket.run_id, start_ticks: startTicks, ...(ticket.kind === "agent" ? { agent_id: ticket.id } : {}) };
+    if (!external && process.platform !== "win32" && groups.length) while (!processGroupsEnded(groups, context)) await Bun.sleep(200);
   }
   /** Drop the record only once the backend is gone, so a surviving one stays reapable. */
   function releaseBackend() {
@@ -185,6 +188,8 @@ export async function runner(file: string) {
       if (script) { spawned.stdout?.on("data", bytes => writeSync(log!, bytes)); spawned.stderr?.on("data", bytes => writeSync(log!, bytes)); }
       child = spawned; exit = childExit(spawned);
     }
+    // Record the complete group set only after the final spawn; an interrupted launch stays uncertain.
+    if (!external && process.platform !== "win32" && child.pid) engine.trackProcessGroups(ticket, nonce, [child.pid, ...(server?.pid ? [server.pid] : [])], startTicks);
     if (codexSocket) observer = observeCodex(codexSocket, initialPrompt, observation => {
       try { engine.observe(context, observation, "codex-app-server"); }
       catch (error) {

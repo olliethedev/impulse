@@ -56,6 +56,8 @@ export interface Execution {
   status: Status; ticket: string; runner_nonce: string | null; pid: number | null;
   boot_id: string | null; heartbeat: number | null; launch_at: number | null;
   exit_code: number | null; ended_at: number | null; error: string | null;
+  process_groups?: number[];
+  process_start_ticks?: number;
   observation?: HarnessObservation;
   last_harness_failure?: HarnessObservation;
 }
