@@ -25,7 +25,7 @@ Every public command is listed below. All support `--json`, and mutations run wi
 | --- | --- |
 | `impulse task validate FILE` | Check a task definition and its references. |
 | `impulse task preview FILE` | Show resolved paths and prospective execution times before registration. |
-| `impulse task register FILE --harness NAME` | Register a task and start the scheduler. `--harness` is required (`codex`, `claude-code`, or a custom harness from settings), so the default harness never applies silently. Use `--disabled` to register without enabling automatic runs. |
+| `impulse task register FILE --harness NAME` | Register a task and start the scheduler. `--harness` is required (`codex`, `claude-code`, `pi`, or a custom harness from settings), so the default harness never applies silently. Use `--disabled` to register without enabling automatic runs. |
 | `impulse task list` | List registered tasks. |
 | `impulse task show TASK` | Inspect applied configuration, next run, source-file changes, and the latest run. |
 | `impulse task update TASK` | Apply the edited definition. Use `--file FILE` to relink a moved definition while retaining task identity and history. |
@@ -122,7 +122,9 @@ impulse setup --harness codex --terminal yakuake --non-interactive
 impulse doctor
 ```
 
-Built-in harnesses: `codex`, `claude-code`. Built-in terminals: `yakuake`, `konsole`, `terminal-app`, `windows-terminal`. [Custom profiles](docs/operations.md#custom-harnesses-and-terminals) support other setups through executable argument arrays.
+Built-in harnesses: `codex`, `claude-code`, `pi`. Built-in terminals: `yakuake`, `konsole`, `terminal-app`, `windows-terminal`. [Custom profiles](docs/operations.md#custom-harnesses-and-terminals) support other setups through executable argument arrays.
+
+Pi uses its configured model, skills, extensions and project-trust settings. Register with `--harness pi` or change an existing task with `impulse task update TASK --harness pi`. Install the skill with `impulse skill install --harness pi --scope user`; Pi's user skill directory honors `PI_CODING_AGENT_DIR`. Pi assignments report their outcome with `agent finish`; structured harness observations and automatic project-trust preparation are currently available only for Codex and Claude Code.
 
 Impulse uses the harness's existing login, tools, MCP configuration, and permissions. Before scheduling unattended work in a new project, open your harness there once and complete its login and project-trust setup. An optional host setting, `[trust] roots = ["/absolute/path/to/Projects"]`, authorizes built-in Codex and Claude Code launches to record project trust beneath that directory. See [setup and revocation](docs/operations.md#project-trust-for-unattended-starts).
 

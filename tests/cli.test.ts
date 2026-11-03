@@ -139,7 +139,7 @@ test("registration requires an explicit harness and records it as the task's cho
   for (const args of [["task", "register", file, "--disabled"], ["task", "register", file, "--harness", " ", "--disabled"]]) {
     const missing = await invoke(home, args);
     expect(missing.code).toBe(2);
-    expect(missing.result).toMatchObject({ ok: false, error: { code: "MISSING_OPTION", message: "--harness is required for task register; choose one of: codex, claude-code, fixture" } });
+    expect(missing.result).toMatchObject({ ok: false, error: { code: "MISSING_OPTION", message: "--harness is required for task register; choose one of: codex, claude-code, pi, fixture" } });
   }
   expect((await invoke(home, ["task", "list"])).result.data).toEqual([]);
   const registered = (await invoke(home, ["task", "register", file, "--harness", "claude-code", "--disabled"])).result.data;

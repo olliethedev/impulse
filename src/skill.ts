@@ -8,9 +8,12 @@ import { requireThat } from "./errors.ts";
 const files = { "SKILL.md": skill, "references/definitions.md": definitions };
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 export function skillDirectory(harness: string, scope: string): string {
-  requireThat(["codex", "claude-code"].includes(harness), "UNSUPPORTED_HARNESS", "Supply --dir for a custom harness");
+  requireThat(["codex", "claude-code", "pi"].includes(harness), "UNSUPPORTED_HARNESS", "Supply --dir for a custom harness");
   requireThat(["user", "project"].includes(scope), "INVALID_SCOPE", "Scope must be user or project");
   const base = scope === "project" ? process.cwd() : homedir();
+  if (harness === "pi") return scope === "project"
+    ? join(base, ".pi", "skills", "impulse")
+    : join(process.env.PI_CODING_AGENT_DIR || join(base, ".pi", "agent"), "skills", "impulse");
   return join(base, harness === "codex" ? ".agents" : ".claude", "skills", "impulse");
 }
 function checkOwnership(dir: string) {

@@ -141,6 +141,9 @@ export async function runner(file: string) {
       command = substitute(descriptor.profile.harness_profile.command, file);
       external = descriptor.profile.harness_profile.lifecycle === "external";
       engine.observe(context, { state: "unavailable", note: "Custom harness: optional agent observe reports are not yet available; its declared execution lifecycle still applies." });
+    } else if (descriptor.profile.harness === "pi") {
+      command = ["pi", initialPrompt];
+      engine.observe(context, { state: "unavailable", note: "Pi has no structured observation adapter; inspect its terminal and owned work. Explicit agent finish reports remain required." });
     } else if (descriptor.profile.harness === "claude-code") {
       const version = Bun.spawnSync(["claude", "--version"], { stdout: "pipe", stderr: "pipe", timeout: 15000 });
       if (version.exitCode === 0 && supportsClaudeObservation(version.stdout.toString())) {

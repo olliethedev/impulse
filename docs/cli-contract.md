@@ -203,7 +203,7 @@ Once all work has ended, an unconfirmed child makes the run unconfirmed unless a
 
 ## Setup, profiles, and skill packaging
 
-Proposed built-in harness names: `codex`, `claude-code`. Terminal names: `terminal-app`, `windows-terminal`, `konsole`, `yakuake`.
+Built-in harness names: `codex`, `claude-code`, `pi`. Terminal names: `terminal-app`, `windows-terminal`, `konsole`, `yakuake`.
 
 Local settings have schema version 1 with tables for `defaults`, `limits`, `retention`, `notifications`, `harnesses`, `terminals`, and optional `trust`. The `trust.roots` array opts into exact project trust for built-in agent launches under approved absolute directories; it defaults off and cannot be set in task definitions. See [project trust](operations.md#project-trust-for-unattended-starts). Custom harness and terminal entries use an executable/argument array with a whole-argument `{launch_file}` placeholder. That JSON file carries the resolved instructions or runner invocation and working directory; it is not evaluated as shell source. A terminal wrapper must start the specified Impulse runner, and a harness wrapper must keep the real assignment observable until its outcome or termination. See [the adapter boundary](runtime-design.md).
 

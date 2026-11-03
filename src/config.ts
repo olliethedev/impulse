@@ -151,7 +151,7 @@ export function parseSettings(raw: string): Settings {
 }
 export function executionProfile(settings: Settings, overrides: { harness?: string; terminal?: string }): ExecutionProfile {
   const harness = overrides.harness ?? settings.defaults.harness, terminal = overrides.terminal ?? settings.defaults.terminal;
-  requireThat(["codex", "claude-code"].includes(harness) || Object.hasOwn(settings.harnesses, harness), "INVALID_PROFILE", `Unknown harness: ${harness}`);
+  requireThat(["codex", "claude-code", "pi"].includes(harness) || Object.hasOwn(settings.harnesses, harness), "INVALID_PROFILE", `Unknown harness: ${harness}`);
   requireThat(["konsole", "yakuake", "terminal-app", "windows-terminal"].includes(terminal) || Object.hasOwn(settings.terminals, terminal), "INVALID_PROFILE", `Unknown terminal: ${terminal}`);
   return { harness, terminal, ...(settings.harnesses[harness] ? { harness_profile: settings.harnesses[harness] } : {}), ...(settings.terminals[terminal] ? { terminal_profile: settings.terminals[terminal] } : {}) };
 }

@@ -54,6 +54,7 @@ Global: --json, --context PATH, --request-id KEY, --help, --version
 Use --current with run show/logs inside a run. Mutations never require prompts.
 Durations: positive integer s/m/h/d. Times: RFC 3339 with UTC offset.
 All work uses your harness's existing authentication and permissions.
+Built-in harnesses: codex, claude-code, pi.
 `;
 const booleanOptions = ["json", "help", "version", "disabled", "now", "reset-next", "no-wait", "force", "follow", "current", "apply", "clear-harness", "clear-terminal", "non-interactive"];
 const stringOptions = ["context", "request-id", "harness", "terminal", "name", "file", "at", "after", "task", "instructions", "instructions-file", "outcome", "summary", "reason", "startup", "skill", "scope", "dir"];
@@ -148,7 +149,7 @@ export async function main() {
         result = { valid: true, ...loaded, ...(command === "preview" ? { occurrences } : {}) };
       } else if (command === "register") {
         allow("name", "harness", "terminal", "disabled");
-        const harnesses = ["codex", "claude-code", ...Object.keys(engine.settings().harnesses)];
+        const harnesses = ["codex", "claude-code", "pi", ...Object.keys(engine.settings().harnesses)];
         requireThat(option("harness")?.trim(), "MISSING_OPTION", `--harness is required for task register; choose one of: ${harnesses.join(", ")}`);
         const loaded = loadDefinition(needArg());
         result = mutate(() => engine.register(loaded, { ...(option("name") ? { name: required("name") } : {}), harness: required("harness"), ...(option("terminal") ? { terminal: required("terminal") } : {}), disabled: !!values.disabled }), loaded.hash); await startDaemon(engine);
