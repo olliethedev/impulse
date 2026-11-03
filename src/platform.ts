@@ -68,20 +68,33 @@ export function processGroupsEnded(groups: number[], context?: Pick<Context, "ru
     if (process.platform === "linux" && context) {
       if (context.start_ticks === undefined) return false;
       const marker = context.agent_id ? `IMPULSE_AGENT_ID=${context.agent_id}` : `IMPULSE_RUN_ID=${context.run_id}`;
-      const entries = readdirSync("/proc");
-      for (const entry of entries) {
-        if (!/^\d+$/.test(entry)) continue;
+      const startTicks = context.start_ticks;
+      const pids = () => readdirSync("/proc").filter(entry => /^\d+$/.test(entry));
+      const owned = (entry: string): boolean => {
         try {
-          if (statSync(`/proc/${entry}`).uid !== process.getuid!() || !alive(Number(entry))) continue;
-          if (processStartTicks(Number(entry))! < context.start_ticks) continue;
-          if (readFileSync(`/proc/${entry}/environ`, "utf8").split("\0").includes(marker)) return false;
+          if (statSync(`/proc/${entry}`).uid !== process.getuid!() || !alive(Number(entry))) return false;
+          if (processStartTicks(Number(entry))! < startTicks) return false;
+          try { return readFileSync(`/proc/${entry}/environ`, "utf8").split("\0").includes(marker); }
+          catch (error) {
+            if (!["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+            // Non-dumpable processes (browser sandboxes, ssh-agent, setcap binaries) hide their environment.
+            // Count one as owned only inside a session this runner started; each owned group leads its own session.
+            const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
+            return groups.includes(Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[3]));
+          }
         } catch (error) {
-          if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return false;
+          return !["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "");
         }
+      };
+      // A tool may fork while its parent exits during inspection, so inspect processes that appeared meanwhile.
+      // A busy desktop starts processes constantly; give up for this tick only if arrivals never settle.
+      const seen = new Set<string>();
+      let pending = pids();
+      for (let pass = 0; pending.length; pass++) {
+        if (pass === 10) return false;
+        for (const entry of pending) { seen.add(entry); if (owned(entry)) return false; }
+        pending = pids().filter(entry => !seen.has(entry));
       }
-      // A tool may fork while its parent exits during inspection; check again next tick.
-      const before = new Set(entries);
-      if (readdirSync("/proc").some(entry => /^\d+$/.test(entry) && !before.has(entry))) return false;
     }
     return true;
   }
