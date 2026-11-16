@@ -3,7 +3,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { ImpulseError, message, requireThat } from "./errors.ts";
 import { duration, timestamp, validateCron, localZone } from "./schedule.ts";
-import type { Definition, ExecutionProfile, Profile, Settings } from "./types.ts";
+import { sessionModes, type Definition, type ExecutionProfile, type Profile, type SessionMode, type Settings } from "./types.ts";
 
 type Table = Record<string, unknown>;
 function table(value: unknown, allowed: string[], label: string): Table {
@@ -117,21 +117,24 @@ export function parseSettings(raw: string): Settings {
     const v = table(Bun.TOML.parse(raw), ["schema_version", "defaults", "limits", "retention", "notifications", "harnesses", "terminals", "trust"], "settings");
     requireThat(v.schema_version === 1, "INVALID_CONFIG", "schema_version must be 1");
     const defaults = defaultSettings();
-    const d = table(v.defaults ?? {}, ["harness", "terminal"], "defaults"), l = table(v.limits ?? {}, ["agents"], "limits"), n = table(v.notifications ?? {}, ["desktop", "command"], "notifications");
+    const d = table(v.defaults ?? {}, ["harness", "terminal", "session"], "defaults"), l = table(v.limits ?? {}, ["agents"], "limits"), n = table(v.notifications ?? {}, ["desktop", "command"], "notifications");
     function profiles(value: unknown, label: string): Record<string, Profile> {
       const values = value ?? {};
       requireThat(values !== null && typeof values === "object" && !Array.isArray(values), "INVALID_CONFIG", `${label} must be a table`);
       const result: Record<string, Profile> = {};
       for (const [name, value] of Object.entries(values)) {
         requireThat(!["__proto__", "prototype", "constructor"].includes(name), "INVALID_CONFIG", "Invalid profile name");
-        const p = table(value, ["command", "lifecycle"], `${label}.${name}`);
-        const cmd = command(p.command, `${label}.${name}.command`);
-        requireThat(cmd.slice(1).includes("{launch_file}") && cmd.filter(x => x.includes("{launch_file}")).every(x => x === "{launch_file}"), "INVALID_CONFIG", "Custom commands require a whole-argument {launch_file} placeholder after the executable");
-        result[name] = { command: cmd, lifecycle: choice(p.lifecycle ?? "process", ["process", "external"], `${label}.${name}.lifecycle`) };
+        const p = table(value, label === "harnesses" ? ["command", "lifecycle", "headless_command"] : ["command", "lifecycle"], `${label}.${name}`);
+        const launchCommand = (value: unknown, field: string) => {
+          const cmd = command(value, `${label}.${name}.${field}`);
+          requireThat(cmd.slice(1).includes("{launch_file}") && cmd.filter(x => x.includes("{launch_file}")).every(x => x === "{launch_file}"), "INVALID_CONFIG", "Custom commands require a whole-argument {launch_file} placeholder after the executable");
+          return cmd;
+        };
+        result[name] = { command: launchCommand(p.command, "command"), lifecycle: choice(p.lifecycle ?? "process", ["process", "external"], `${label}.${name}.lifecycle`), ...(p.headless_command !== undefined ? { headless_command: launchCommand(p.headless_command, "headless_command") } : {}) };
       }
       return result;
     }
-    const result: Settings = { schema_version: 1, defaults: { harness: str(d.harness ?? defaults.defaults.harness, "defaults.harness"), terminal: str(d.terminal ?? defaults.defaults.terminal, "defaults.terminal") }, limits: { agents: integer(l.agents, 10, "limits.agents") }, retention: retention(v.retention, defaults.retention) as Settings["retention"], notifications: { desktop: bool(n.desktop, true, "notifications.desktop"), ...(n.command === undefined ? {} : { command: command(n.command, "notifications.command") }) }, harnesses: profiles(v.harnesses, "harnesses"), terminals: profiles(v.terminals, "terminals") };
+    const result: Settings = { schema_version: 1, defaults: { harness: str(d.harness ?? defaults.defaults.harness, "defaults.harness"), terminal: str(d.terminal ?? defaults.defaults.terminal, "defaults.terminal"), ...(d.session !== undefined ? { session: sessionMode(d.session, "defaults.session") } : {}) }, limits: { agents: integer(l.agents, 10, "limits.agents") }, retention: retention(v.retention, defaults.retention) as Settings["retention"], notifications: { desktop: bool(n.desktop, true, "notifications.desktop"), ...(n.command === undefined ? {} : { command: command(n.command, "notifications.command") }) }, harnesses: profiles(v.harnesses, "harnesses"), terminals: profiles(v.terminals, "terminals") };
     if (v.trust !== undefined) {
       const trust = table(v.trust, ["roots"], "trust");
       requireThat(Array.isArray(trust.roots), "INVALID_CONFIG", "trust.roots must be an array of absolute directory paths");
@@ -149,9 +152,12 @@ export function parseSettings(raw: string): Settings {
     throw new ImpulseError("INVALID_CONFIG", message(error));
   }
 }
-export function executionProfile(settings: Settings, overrides: { harness?: string; terminal?: string }): ExecutionProfile {
+export function sessionMode(value: unknown, label = "session"): SessionMode { return choice(value, sessionModes, label); }
+export function executionProfile(settings: Settings, overrides: { harness?: string; terminal?: string; session?: SessionMode }): ExecutionProfile {
   const harness = overrides.harness ?? settings.defaults.harness, terminal = overrides.terminal ?? settings.defaults.terminal;
+  const session = overrides.session ?? settings.defaults.session ?? "keep-open";
   requireThat(["codex", "claude-code", "pi"].includes(harness) || Object.hasOwn(settings.harnesses, harness), "INVALID_PROFILE", `Unknown harness: ${harness}`);
   requireThat(["konsole", "yakuake", "terminal-app", "windows-terminal"].includes(terminal) || Object.hasOwn(settings.terminals, terminal), "INVALID_PROFILE", `Unknown terminal: ${terminal}`);
-  return { harness, terminal, ...(settings.harnesses[harness] ? { harness_profile: settings.harnesses[harness] } : {}), ...(settings.terminals[terminal] ? { terminal_profile: settings.terminals[terminal] } : {}) };
+  requireThat(session !== "headless" || !settings.harnesses[harness] || settings.harnesses[harness]!.headless_command, "INVALID_PROFILE", `Harness ${harness} has no headless_command, so it cannot run headless`);
+  return { harness, terminal, ...(session !== "keep-open" ? { session } : {}), ...(settings.harnesses[harness] ? { harness_profile: settings.harnesses[harness] } : {}), ...(settings.terminals[terminal] ? { terminal_profile: settings.terminals[terminal] } : {}) };
 }

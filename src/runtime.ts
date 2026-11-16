@@ -12,7 +12,7 @@ import { deliverPending, prune, reapBackends } from "./maintenance.ts";
 import { windowsCommand } from "./windows.ts";
 import { terminalProcess, type TerminalProcess, type ExecutionExit } from "./terminal-process.ts";
 import { prepareProjectTrust } from "./project-trust.ts";
-import { activeStatuses } from "./types.ts";
+import { activeStatuses, type Context, type ExecutionProfile } from "./types.ts";
 import { observeCodex } from "./codex-observation.ts";
 import { claudeSettings, supportsClaudeObservation } from "./claude-observation.ts";
 
@@ -72,14 +72,47 @@ async function launch(engine: Engine, ticket: Ticket) {
   const contextFile = join(p.contexts, `${ticket.id}.json`);
   privateJson(contextFile, { ...context, paths: p });
   const file = join(p.launches, `${ticket.id}.json`);
-  const descriptor: LaunchDescriptor = { schema_version: 1, ticket, task_name: engine.task(run.task_id).name, paths: p, context_file: contextFile, profile: run.profile, runner: { command: [...selfCommand(), "_runner", file], cwd: run.definition.cwd }, keep_open: ticket.kind === "agent", ...(agent ? { instructions: assignmentInstructions(agent.instructions, contextFile, selfCommand()) } : {}) };
+  const descriptor: LaunchDescriptor = { schema_version: 1, ticket, task_name: engine.task(run.task_id).name, paths: p, context_file: contextFile, profile: run.profile, runner: { command: [...selfCommand(), "_runner", file], cwd: run.definition.cwd }, keep_open: !!agent && run.profile.session !== "headless", ...(agent ? { instructions: assignmentInstructions(agent.instructions, contextFile, selfCommand()) + sessionNote(run.profile) } : {}) };
   if (agent) {
     descriptor.instructions_file = join(p.launches, `${ticket.id}.instructions.md`);
     writeFileSync(descriptor.instructions_file, descriptor.instructions!, { mode: 0o600 });
   }
   privateJson(file, descriptor);
-  if (agent) await launchTerminal(descriptor, file);
+  if (agent && run.profile.session !== "headless") await launchTerminal(descriptor, file);
   else await detach(descriptor.runner.command);
+}
+/** Print-mode launches: no terminal, no bypass flags, so prompts that need an answer are denied. */
+async function headlessCommand(engine: Engine, context: Context, descriptor: LaunchDescriptor, file: string, cwd: string, prompt: string, resume?: string): Promise<string[]> {
+  const profile = descriptor.profile;
+  if (profile.harness_profile) {
+    engine.observe(context, { state: "unavailable", note: "Custom headless harness: optional agent observe reports are not yet available; its declared execution lifecycle still applies." });
+    return substitute(profile.harness_profile.headless_command!, file);
+  }
+  if (profile.harness === "pi") {
+    engine.observe(context, { state: "unavailable", note: "Pi has no structured observation adapter; inspect the run log. Explicit agent finish reports remain required." });
+    return ["pi", "-p", prompt];
+  }
+  if (profile.harness === "claude-code") {
+    const help = Bun.spawnSync(["claude", "--help"], { stdout: "pipe", stderr: "pipe", timeout: 15000 }).stdout.toString();
+    const deny = help.includes("--permission-prompts") ? ["--permission-prompts", "none"] : [];
+    const version = Bun.spawnSync(["claude", "--version"], { stdout: "pipe", stderr: "pipe", timeout: 15000 });
+    if (version.exitCode === 0 && supportsClaudeObservation(version.stdout.toString())) {
+      const session = resume ?? randomUUID(), settings = join(descriptor.paths.launches, `${descriptor.ticket.id}.claude-settings.json`);
+      privateJson(settings, claudeSettings(selfCommand(), descriptor.context_file, session));
+      engine.observe(context, { state: "unavailable", session_id: session, note: "Waiting for Claude observation hooks. User or managed policy can disable hooks." }, "claude-hooks");
+      return ["claude", "-p", ...deny, "--settings", settings, ...(resume ? ["--resume", session] : ["--session-id", session]), prompt];
+    }
+    engine.observe(context, { state: "unavailable", note: "This Claude Code version has no verified observation adapter; inspect the run log." }, "claude-hooks");
+    return ["claude", "-p", ...deny, ...(resume ? ["--resume", resume] : []), prompt];
+  }
+  engine.observe(context, { state: "unavailable", note: "Headless Codex has no private observation transport; inspect the run log." }, "codex-app-server");
+  return resume ? ["codex", "exec", "resume", resume, prompt] : ["codex", "exec", "--cd", cwd, prompt];
+}
+/** Tells the agent how its session ends in a mode other than keep-open. */
+function sessionNote(profile: ExecutionProfile): string {
+  if (profile.session === "close-on-success") return "\nSession mode close-on-success: this session closes as soon as you report success, unlike the note above. Finish all work, including cleanup, before you report success. A failed report leaves the session open.\n";
+  if (profile.session !== "headless") return "";
+  return `\nSession mode headless: nobody watches this session and permission prompts are denied. The session ends when your final turn ends, so report your outcome before you end it.\n${profile.harness === "codex" ? "Run long commands in the foreground: background processes end with your turn.\n" : ""}`;
 }
 function childExit(child: ChildProcess): Promise<{ code: number | null; error: string | null }> {
   return new Promise(resolve => {
@@ -91,7 +124,8 @@ export async function runner(file: string) {
   const descriptor = JSON.parse(readFileSync(file, "utf8")) as LaunchDescriptor;
   const store = new Store(descriptor.paths), engine = new Engine(store, Date.now, elapsedClock), nonce = randomUUID(), ticket = descriptor.ticket;
   let log: number | undefined, child: ProcessHandle | undefined, server: ChildProcess | undefined, terminal: TerminalProcess | undefined;
-  let external = false, sentGrace = false, sentForce = false;
+  let external = false, sentGrace = false, sentForce = false, closing = false;
+  const mode = descriptor.profile.session ?? "keep-open", headless = ticket.kind === "agent" && mode === "headless";
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let observer: ReturnType<typeof observeCodex> | undefined, codexSocket: string | undefined;
   const controlFile = join(descriptor.paths.launches, `${ticket.id}.control.json`);
@@ -122,6 +156,16 @@ export async function runner(file: string) {
           }
           sentGrace = true; sentForce ||= state.force;
         }
+        // The agent reported success, its last action in this mode; end its session so the tab can close.
+        if (mode === "close-on-success" && !closing && !external && child && engine.agent(ticket.id).status === "succeeded") {
+          closing = true;
+          const stop = (force: boolean) => {
+            if (process.platform === "win32") privateJson(controlFile, { force });
+            else { if (server) stopChild(server, force, true); if (child) stopChild(child, force, true); }
+          };
+          stop(false);
+          setTimeout(() => { try { if (child?.pid && groupAlive(child.pid)) stop(true); } catch { /* Exit handling records what remains. */ } }, 10000).unref();
+        }
       } catch (error) { console.error(`Impulse runner: ${message(error)}`); }
     }, 500);
     const context = ticket.kind === "agent" ? engine.agent(ticket.id).context : run.context;
@@ -140,6 +184,10 @@ export async function runner(file: string) {
     if (script) {
       if (run.definition.work.kind !== "script") throw new Error("Script ticket has agent definition");
       command = run.definition.work.command; log = openSync(join(descriptor.paths.logs, `${run.id}.log`), "a", 0o600);
+    } else if (headless) {
+      log = openSync(join(descriptor.paths.logs, `${run.id}.log`), "a", 0o600);
+      command = await headlessCommand(engine, context, descriptor, file, run.definition.cwd, initialPrompt, resumes?.session_id);
+      external = descriptor.profile.harness_profile?.lifecycle === "external";
     } else if (descriptor.profile.harness_profile) {
       command = substitute(descriptor.profile.harness_profile.command, file);
       external = descriptor.profile.harness_profile.lifecycle === "external";
@@ -188,10 +236,10 @@ export async function runner(file: string) {
     if (engine.heartbeat(ticket, nonce).cancel) throw new Error("Cancelled before execution started");
     const invocation = process.platform === "win32" && !external ? windowsCommand(command, run.definition.cwd, join(descriptor.paths.launches, `${ticket.id}.process.json`), controlFile, outcomeFile) : command;
     let exit: Promise<ExecutionExit>;
-    if (!script && process.platform !== "win32") { terminal = terminalProcess(invocation, run.definition.cwd, env); child = terminal.process; exit = terminal.exited; }
+    if (!script && !headless && process.platform !== "win32") { terminal = terminalProcess(invocation, run.definition.cwd, env); child = terminal.process; exit = terminal.exited; }
     else {
-      const spawned = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32", stdio: script ? ["ignore", "pipe", "pipe"] : "inherit", windowsHide: script });
-      if (script) { spawned.stdout?.on("data", bytes => writeSync(log!, bytes)); spawned.stderr?.on("data", bytes => writeSync(log!, bytes)); }
+      const spawned = spawn(invocation[0]!, invocation.slice(1), { cwd: run.definition.cwd, env, detached: process.platform !== "win32", stdio: script || headless ? ["ignore", "pipe", "pipe"] : "inherit", windowsHide: script || headless });
+      if (script || headless) { spawned.stdout?.on("data", bytes => writeSync(log!, bytes)); spawned.stderr?.on("data", bytes => writeSync(log!, bytes)); }
       child = spawned; exit = childExit(spawned);
     }
     // Record the complete group set only after the final spawn; an interrupted launch stays uncertain.
@@ -225,7 +273,7 @@ export async function runner(file: string) {
   } finally {
     await observer?.close(); terminal?.close(); if (heartbeat) clearInterval(heartbeat); releaseBackend(); if (log !== undefined) closeSync(log); store.close();
   }
-  if (descriptor.keep_open && process.stdin.isTTY) {
+  if (descriptor.keep_open && process.stdin.isTTY && !(mode === "close-on-success" && closing)) {
     console.log("\nImpulse assignment ended. This terminal remains open; press Enter to close the runner.");
     await new Promise<void>(resolve => { process.stdin.resume(); process.stdin.once("data", () => { process.stdin.pause(); resolve(); }); });
   }

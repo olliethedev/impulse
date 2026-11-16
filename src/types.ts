@@ -13,10 +13,13 @@ export interface Definition {
   notifications: { on_success: boolean; on_failure: boolean; on_interruption: boolean };
   retention: { history?: string; logs?: string };
 }
-export interface Profile { command: string[]; lifecycle?: "process" | "external" }
+/** How an agent's session is shown: a tab left open, a tab closed after success, or no tab. */
+export type SessionMode = "keep-open" | "close-on-success" | "headless";
+export const sessionModes: readonly SessionMode[] = ["keep-open", "close-on-success", "headless"];
+export interface Profile { command: string[]; lifecycle?: "process" | "external"; headless_command?: string[] }
 export interface Settings {
   schema_version: 1;
-  defaults: { harness: string; terminal: string };
+  defaults: { harness: string; terminal: string; session?: SessionMode };
   limits: { agents: number };
   retention: { history: string; logs: string };
   notifications: { desktop: boolean; command?: string[] };
@@ -24,7 +27,8 @@ export interface Settings {
   terminals: Record<string, Profile>;
   trust?: { roots: string[] };
 }
-export interface ExecutionProfile { harness: string; terminal: string; harness_profile?: Profile; terminal_profile?: Profile }
+/** session is omitted for keep-open, so profiles from before session modes stay equal. */
+export interface ExecutionProfile { harness: string; terminal: string; session?: Exclude<SessionMode, "keep-open">; harness_profile?: Profile; terminal_profile?: Profile }
 export type Outcome = "succeeded" | "failed" | "unconfirmed" | "interrupted" | "cancelled";
 export type Status = "queued" | "launching" | "running" | "stopping" | "uncertain" | Outcome;
 export const activeStatuses: Status[] = ["queued", "launching", "running", "stopping", "uncertain"];
@@ -33,7 +37,7 @@ export interface Due { at: number; source: "first" | "calendar" | "completion" |
 export interface Task {
   id: string; name: string; source: string; source_hash: string; definition: Definition;
   revision: number; registered_at: number; enabled: boolean; removed: boolean;
-  overrides: { harness?: string; terminal?: string }; profile: ExecutionProfile;
+  overrides: { harness?: string; terminal?: string; session?: SessionMode }; profile: ExecutionProfile;
   next: Due | null; last_run: string | null; hold: boolean; zone: string;
   last_calendar_nominal: string | null;
   registered_clock?: ClockSample;

@@ -40,6 +40,10 @@ _Avoid_: Model, terminal
 The application in which Impulse opens an agent's working session, such as Yakuake. The terminal is configured separately from the agent harness.
 _Avoid_: Agent harness
 
+**Session mode**:
+How an agent's session is shown: a terminal tab left open (`keep-open`), a tab closed once the agent reports success (`close-on-success`), or no terminal at all (`headless`). A local choice like the harness and terminal.
+_Avoid_: Terminal, harness
+
 **Agent request**:
 A request for Impulse to launch an agent with instructions for work to perform, using the task's configured harness and terminal. The requester waits for the agent's outcome by default or can choose to continue immediately; the agent remains part of the tracked run in either case.
 _Avoid_: Repair request, failure handler

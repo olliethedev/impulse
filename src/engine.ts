@@ -3,7 +3,7 @@ import { defaultSettings, executionProfile, type LoadedDefinition } from "./conf
 import { requireThat } from "./errors.ts";
 import { duration, firstDue, nextCalendar, timestamp, zone } from "./schedule.ts";
 import { Store } from "./store.ts";
-import { activeStatuses, type Agent, type ClockSample, type Context, type Due, type Execution, type HarnessObservation, type Lease, type Observation, type Outcome, type Run, type Settings, type Task } from "./types.ts";
+import { activeStatuses, type SessionMode, type Agent, type ClockSample, type Context, type Due, type Execution, type HarnessObservation, type Lease, type Observation, type Outcome, type Run, type Settings, type Task } from "./types.ts";
 
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 const active = (status: string) => activeStatuses.includes(status as Run["status"]);
@@ -47,28 +47,28 @@ export class Engine {
       this.store.setMeta(receiptKey, { fingerprint, result }); return result;
     });
   }
-  register(loaded: LoadedDefinition, options: { name?: string; harness?: string; terminal?: string; disabled?: boolean } = {}): Task {
+  register(loaded: LoadedDefinition, options: { name?: string; harness?: string; terminal?: string; session?: SessionMode; disabled?: boolean } = {}): Task {
     return this.store.atomic(() => {
       const old = this.tasks().find(t => t.source === loaded.path); if (old) return old;
       const name = options.name ?? loaded.definition.name;
       requireThat(!this.tasks().some(t => t.name === name), "NAME_CONFLICT", `Task name ${name} is already registered; use --name`, 4);
       if (loaded.definition.first_run.kind === "at") timestamp(loaded.definition.first_run.at, this.now());
-      const overrides = { ...(options.harness ? { harness: options.harness } : {}), ...(options.terminal ? { terminal: options.terminal } : {}) };
+      const overrides = { ...(options.harness ? { harness: options.harness } : {}), ...(options.terminal ? { terminal: options.terminal } : {}), ...(options.session ? { session: options.session } : {}) };
       const task: Task = { id: id("task"), name, source: loaded.path, source_hash: loaded.hash, definition: loaded.definition, revision: 1, registered_at: this.now(), enabled: !options.disabled, removed: false, overrides, profile: executionProfile(this.settings(), overrides), next: firstDue(loaded.definition, this.now()), last_run: null, hold: false, zone: zone(loaded.definition.schedule), last_calendar_nominal: null };
       const clock = this.clock(); if (clock) task.registered_clock = clock;
       task.next = this.initial(task);
       this.store.put("tasks", task); this.event(task.id, null, "registered"); return task;
     });
   }
-  update(reference: string, loaded: LoadedDefinition, changes: { harness?: string | null; terminal?: string | null } = {}): Task {
+  update(reference: string, loaded: LoadedDefinition, changes: { harness?: string | null; terminal?: string | null; session?: SessionMode | null } = {}): Task {
     return this.store.atomic(() => {
       const task = this.task(reference);
       requireThat(!task.removed, "NOT_FOUND", "Task is unregistered", 3);
       if (loaded.definition.first_run.kind === "at" && (task.definition.first_run.kind !== "at" || loaded.definition.first_run.at !== task.definition.first_run.at)) timestamp(loaded.definition.first_run.at, this.now());
       requireThat(!this.tasks().some(t => t.id !== task.id && t.source === loaded.path), "SOURCE_CONFLICT", "Source is already registered", 4);
-      for (const key of ["harness", "terminal"] as const) {
+      for (const key of ["harness", "terminal", "session"] as const) {
         if (changes[key] === null) delete task.overrides[key];
-        else if (changes[key] !== undefined) task.overrides[key] = changes[key];
+        else if (changes[key] !== undefined) (task.overrides as Record<string, string>)[key] = changes[key];
       }
       task.definition = loaded.definition; task.source = loaded.path; task.source_hash = loaded.hash;
       task.profile = executionProfile(this.settings(), task.overrides); task.revision++;
@@ -171,7 +171,7 @@ export class Engine {
       return this.admit(task, "manual", 0);
     });
   }
-  resume(runId: string): Run {
+  resume(runId: string, mode?: SessionMode): Run {
     return this.store.atomic(() => {
       const previous = this.run(runId), task = this.task(previous.task_id);
       requireThat(!task.removed, "NOT_FOUND", "Task is unregistered", 3);
@@ -183,6 +183,7 @@ export class Engine {
       requireThat(previous.revision === task.revision, "CONFIG_CHANGED", `This run used revision ${previous.revision}; revision ${task.revision} is applied, so start a fresh run with task run`, 4);
       requireThat(!this.runs(task.id).some(r => active(r.status)), "TASK_ACTIVE", "This task already has active work", 4);
       const run = this.admit(task, "resume", 0), next = this.agent(run.root_agent!);
+      if (mode) { run.profile = executionProfile(this.settings(), { ...task.overrides, session: mode }); this.store.put("runs", run); }
       next.resumes = { run_id: previous.id, agent_id: agent.id, session_id: session };
       this.store.put("agents", next); this.event(task.id, run.id, "resumed", next.resumes); return run;
     });

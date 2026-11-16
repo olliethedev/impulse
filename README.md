@@ -70,7 +70,7 @@ An agent request belongs to the current run, including with `--no-wait`. To laun
 
 | Command | What it does |
 | --- | --- |
-| `impulse setup --harness NAME --terminal NAME` | Apply supplied machine choices. Optional `--startup enable` and `--skill NAME` also configure login startup and install the selected skill. |
+| `impulse setup --harness NAME --terminal NAME` | Apply supplied machine choices. `--session keep-open\|close-on-success\|headless` sets how agent sessions are shown ([session modes](docs/operations.md#session-modes)). Optional `--startup enable` and `--skill NAME` also configure login startup and install the selected skill. |
 | `impulse config show` | Show applied machine settings. |
 | `impulse config apply FILE` | Validate and apply a settings file. |
 | `impulse doctor` | Inspect executable paths, configuration locations, harness, terminal, and agent capacity. |
@@ -91,7 +91,7 @@ An agent request belongs to the current run, including with `--no-wait`. To laun
 | --- | --- |
 | `impulse run confirm-ended RUN --reason TEXT` | Record an operator's verification that uncertain execution and its external work have ended. Requires dead runners and never declares success. |
 | `impulse agent resolve AGENT_ID --outcome success\|failed --reason TEXT` | Record an operator's outcome assertion for ended, unconfirmed agent work. |
-| `impulse run resume RUN` | Start a new run that reopens the ended agent's Claude Code or Codex session, so it can finish its work and report an outcome. |
+| `impulse run resume RUN [--session MODE]` | Start a new run that reopens the ended agent's Claude Code or Codex session, so it can finish its work and report an outcome. |
 | `impulse notification list` | Inspect notification delivery status. |
 | `impulse notification retry NOTIFICATION_ID` | Explicitly redeliver a notification. |
 | `impulse history prune [--task TASK]` | Preview eligible history/log cleanup. Add `--apply` to delete eligible records and logs. |

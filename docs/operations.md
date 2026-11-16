@@ -4,13 +4,14 @@
 
 `impulse doctor --json` shows the selected profiles, executable locations, and state/config directories. Linux follows XDG config/state directories; macOS uses `~/Library/Application Support/Impulse`; Windows uses roaming config under `%APPDATA%` and local state under `%LOCALAPPDATA%`. `IMPULSE_HOME` isolates both roots beneath an explicit directory.
 
-`setup --harness codex --terminal yakuake --non-interactive` writes applied settings and an editable `settings.toml`. To change settings, edit that file and run `config apply FILE`. SQLite retains the applied snapshot, so partially editing TOML never changes running behavior. `config show` is authoritative if a file write failed after application. Task-local `--harness` and `--terminal` overrides are stored separately from shareable definitions.
+`setup --harness codex --terminal yakuake --non-interactive` writes applied settings and an editable `settings.toml`. To change settings, edit that file and run `config apply FILE`. SQLite retains the applied snapshot, so partially editing TOML never changes running behavior. `config show` is authoritative if a file write failed after application. Task-local `--harness`, `--terminal` and `--session` overrides are stored separately from shareable definitions.
 
 ```toml
 schema_version = 1
 [defaults]
 harness = "codex"
 terminal = "konsole"
+session = "keep-open"
 [limits]
 agents = 10
 [retention]
@@ -40,6 +41,22 @@ For a task inside an approved root, Impulse adds exact trust entries using [Code
 Configuration targets are `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`). The original configuration gets a private `.before-impulse-trust` backup before the first change. Updates preserve other settings, use an atomic replacement, serialize Impulse writers, and abort if they detect another writer changed the file. Ordinary new Codex entries preserve comments; existing inline or incomplete project tables may require TOML reserialization. Existing explicit trust values other than trusted, including Claude's `false`, require a manual decision and are never overwritten automatically. Parse errors and lock conflicts stop setup with an actionable error.
 
 Removing a root prevents future automatic additions; it does not revoke trust already stored in the harness. Revoke individual entries in the harness configuration explicitly. Do not restore an old whole-file backup over newer unrelated settings. This feature grants workspace trust only: authentication, tool permissions, MCP approvals, managed policies, and any other onboarding remain controlled by the harness.
+
+## Session modes
+
+The session mode decides how an agent's session is shown. Set the default with `defaults.session` (or `setup --session MODE`), override it per task with `task register`/`task update --session MODE`, and remove the override with `--clear-session`. `run resume RUN --session MODE` chooses a mode for one resumed run. Nested agents use their run's mode.
+
+- `keep-open` (default): a terminal tab that stays open after the agent reports, until the harness exits and you press Enter.
+- `close-on-success`: the same tab, closed once the agent reports success. The assignment tells the agent to finish all work, including cleanup, before reporting success. Impulse then stops the harness as `run stop` would, and forces the stop after 10 seconds if it hasn't exited. Konsole runs without `--hold`, and Yakuake and Terminal.app start the runner with `exec`, so the tab goes when the runner exits. A failed or unconfirmed ending keeps the tab. External lifecycles are not stopped. A custom terminal wrapper decides itself whether its tab closes.
+- `headless`: no terminal. The runner starts detached and the harness runs in print mode: `claude -p --permission-prompts none`, `codex exec`, `pi -p`, or a custom harness's `headless_command`. Its plain-text output goes to the run log (`run logs RUN --follow`). Impulse adds no permission bypass, so a prompt that needs an answer is denied; widen access in the harness's own settings. `codex exec` ends at the end of the turn and kills background processes, so Codex assignments are told to run long commands in the foreground. Claude Code observation hooks still apply; headless Codex, Pi and custom harnesses have no structured observation.
+
+A custom harness without `headless_command` cannot use `headless`, and choosing it is a configuration error:
+
+```toml
+[harnesses.my-agent]
+command = ["/path/to/agent-wrapper", "{launch_file}"]
+headless_command = ["/path/to/agent-wrapper", "--headless", "{launch_file}"]
+```
 
 ## Custom harnesses and terminals
 

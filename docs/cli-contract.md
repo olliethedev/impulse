@@ -15,7 +15,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 
 | Command | Meaning |
 | --- | --- |
-| `setup [--harness NAME] [--terminal NAME] [--startup enable] [--skill HARNESS] --non-interactive` | Apply supplied choices, optionally configure startup and install the skill. Omitted choices remain unchanged. |
+| `setup [--harness NAME] [--terminal NAME] [--session MODE] [--startup enable] [--skill HARNESS] --non-interactive` | Apply supplied choices, optionally configure startup and install the skill. Omitted choices remain unchanged. |
 | `config show` / `config apply FILE` | Inspect or validate/apply machine settings, including profiles, defaults, capacity, notification commands, and retention. |
 | `startup enable` / `disable` / `status` | Manage only Impulse's per-user login entry. Enabling also starts the scheduler now; disabling the entry does not stop the current scheduler. |
 | `daemon start` / `stop` / `status` | Manage dispatch. Stop preserves ongoing runners; run cancellation is separate. |
@@ -24,8 +24,8 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `doctor` | Inspect selected executable paths, platform, settings, state access, and scheduler health. Does not launch an agent. |
 | `task validate FILE` | Validate a definition and references without registration or execution. |
 | `task preview FILE [--at TIMESTAMP]` | Show resolved working directory, schedule, and prospective first occurrences without activating anything. |
-| `task register FILE --harness NAME [--name NAME] [--terminal NAME] [--disabled]` | Register a source definition and local execution overrides. `--harness` is required so the configured default never applies silently; omitting it fails with `MISSING_OPTION` naming the valid harnesses. Return identity, revision, effective choices, and next time. |
-| `task update TASK [--file FILE] [--harness NAME] [--terminal NAME]` | Apply the source file or explicitly relink it, retaining identity/history and replacing upcoming configuration/timing. |
+| `task register FILE --harness NAME [--name NAME] [--terminal NAME] [--session MODE] [--disabled]` | Register a source definition and local execution overrides. `--harness` is required so the configured default never applies silently; omitting it fails with `MISSING_OPTION` naming the valid harnesses. Return identity, revision, effective choices, and next time. |
+| `task update TASK [--file FILE] [--harness NAME] [--terminal NAME] [--session MODE] [--clear-harness] [--clear-terminal] [--clear-session]` | Apply the source file or explicitly relink it, retaining identity/history and replacing upcoming configuration/timing. `--session` sets the task's session mode (`keep-open`, `close-on-success`, `headless`); `--clear-session` returns it to the default. |
 | `task rename TASK --name NAME` | Change only the registered name. Preserve task ID, history, source/applied definition, revision, enabled/held state, next time and active contexts. Reject a conflicting or empty name. |
 | `task list` / `task show TASK` | Inspect applied state, source path, source drift, latest run, and why the next execution is due, queued, disabled, or awaiting intervention. |
 | `task next [TASK] --at TIME` / `--after DURATION` | Replace the next scheduled execution. Omit TASK only within a valid run context. |
@@ -39,7 +39,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `run logs RUN\|--current [--follow]` | Read Impulse-owned logs. `--follow --json` streams events. |
 | `run stop RUN [--force]` | Commit cancellation intent and request termination of all owned work. Return the current stopping/cancelled state; `run wait` can wait for actual termination. |
 | `run confirm-ended RUN --reason TEXT` | An operator confirms that uncertain/stopping execution and its external work have ended. Requires dead runners; records interruption or unconfirmed work, never success. |
-| `run resume RUN` | An operator starts a new run whose agent reopens the ended run's Claude Code or Codex session with a new context. The run's root agent must have ended unconfirmed, failed or interrupted with a recorded session, the task revision must be unchanged, and the task must have no active run. The ended run keeps its outcome. |
+| `run resume RUN [--session MODE]` | An operator starts a new run whose agent reopens the ended run's Claude Code or Codex session with a new context. The run's root agent must have ended unconfirmed, failed or interrupted with a recorded session, the task revision must be unchanged, and the task must have no active run. The ended run keeps its outcome. The new run uses the task's session mode unless `--session` chooses one for it. |
 | `agent request --instructions TEXT\|--instructions-file FILE [--no-wait]` | Request an agent within the current run. Wait for its reported outcome by default. |
 | `agent show ID` / `agent wait ID` | Inspect or wait for a previously requested agent. |
 | `agent observe --file FILE` | Current-agent callback recording optional harness progress JSON. Uses the same context fencing and request receipts as other callbacks; never establishes termination or success. |

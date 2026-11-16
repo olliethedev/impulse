@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { Engine } from "./engine.ts";
 import { Store } from "./store.ts";
 import { paths, type Paths } from "./paths.ts";
-import { loadDefinition, parseSettings } from "./config.ts";
+import { loadDefinition, parseSettings, sessionMode } from "./config.ts";
 import { ImpulseError, message, requireThat } from "./errors.ts";
 import { duration, firstDue, nextCalendar, timestamp } from "./schedule.ts";
 import { alive, bootId, elapsedClock, selfCommand } from "./platform.ts";
@@ -27,9 +27,9 @@ Usage: impulse <group> <command> [arguments] [options]
   startup enable | disable | status
   doctor
   task validate FILE | preview FILE [--at TIME]
-  task register FILE --harness NAME [--name NAME] [--terminal NAME] [--disabled]
-  task update TASK [--file FILE] [--harness NAME] [--terminal NAME]
-                   [--clear-harness] [--clear-terminal]
+  task register FILE --harness NAME [--name NAME] [--terminal NAME] [--session MODE] [--disabled]
+  task update TASK [--file FILE] [--harness NAME] [--terminal NAME] [--session MODE]
+                   [--clear-harness] [--clear-terminal] [--clear-session]
   task rename TASK --name NAME
   task list | show TASK | remove TASK
   task next [TASK] --at TIME | --after DURATION
@@ -39,7 +39,7 @@ Usage: impulse <group> <command> [arguments] [options]
   run diagnose RUN                      (read-only execution and recovery evidence)
   run stop RUN [--force]                 (does not disable future runs)
   run confirm-ended RUN --reason TEXT   (operator verification of uncertain work)
-  run resume RUN                        (new run that continues an ended agent's Claude Code/Codex session)
+  run resume RUN [--session MODE]       (new run that continues an ended agent's Claude Code/Codex session)
   agent request --instructions TEXT | --instructions-file FILE [--no-wait]
   agent show ID | wait ID
   agent observe --file FILE             (optional harness progress JSON)
@@ -57,8 +57,8 @@ Durations: positive integer s/m/h/d. Times: RFC 3339 with UTC offset.
 All work uses your harness's existing authentication and permissions.
 Built-in harnesses: codex, claude-code, pi.
 `;
-const booleanOptions = ["json", "help", "version", "disabled", "now", "reset-next", "no-wait", "force", "follow", "current", "apply", "clear-harness", "clear-terminal", "non-interactive"];
-const stringOptions = ["context", "request-id", "harness", "terminal", "name", "file", "at", "after", "task", "instructions", "instructions-file", "outcome", "summary", "reason", "startup", "skill", "scope", "dir"];
+const booleanOptions = ["json", "help", "version", "disabled", "now", "reset-next", "no-wait", "force", "follow", "current", "apply", "clear-harness", "clear-terminal", "clear-session", "non-interactive"];
+const stringOptions = ["context", "request-id", "harness", "terminal", "session", "name", "file", "at", "after", "task", "instructions", "instructions-file", "outcome", "summary", "reason", "startup", "skill", "scope", "dir"];
 const parsed = () => parseArgs({ args: process.argv.slice(2), allowPositionals: true, strict: true, options: Object.fromEntries([...booleanOptions.map(name => [name, { type: "boolean" as const }]), ...stringOptions.map(name => [name, { type: "string" as const }])]) });
 function publicValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(publicValue);
@@ -108,13 +108,14 @@ export async function main() {
     const outcome = () => { const value = required("outcome"); requireThat(["success", "failed"].includes(value), "INVALID_OUTCOME", "Outcome must be success or failed"); return value === "success" ? "succeeded" as const : "failed" as const; };
     let result: unknown;
     if (group === "setup") {
-      allow("harness", "terminal", "startup", "skill", "non-interactive");
+      allow("harness", "terminal", "session", "startup", "skill", "non-interactive");
       requireThat(!command, "INVALID_ARGUMENT", "Setup accepts options only");
       if (option("startup")) requireThat(required("startup") === "enable", "INVALID_OPTION", "Setup --startup accepts enable");
       const skillDir = option("skill") ? skillDirectory(required("skill"), "user") : undefined;
       const settings = engine.settings();
       if (option("harness")) settings.defaults.harness = required("harness");
       if (option("terminal")) settings.defaults.terminal = required("terminal");
+      if (option("session")) settings.defaults.session = sessionMode(required("session"));
       const validated = parseSettings(Bun.TOML.stringify(settings)!);
       result = mutate(() => engine.applySettings(validated), validated);
       writeFileSync(join(p.config, "settings.toml"), Bun.TOML.stringify(validated)!, { mode: 0o600 });
@@ -149,16 +150,16 @@ export async function main() {
         if (command === "preview" && loaded.definition.schedule?.kind === "calendar") for (let i = 0; i < 4; i++) occurrences.push(nextCalendar(loaded.definition.schedule, occurrences.at(-1)!.at, loaded.definition.policy.catch_up));
         result = { valid: true, ...loaded, ...(command === "preview" ? { occurrences } : {}) };
       } else if (command === "register") {
-        allow("name", "harness", "terminal", "disabled");
+        allow("name", "harness", "terminal", "session", "disabled");
         const harnesses = ["codex", "claude-code", "pi", ...Object.keys(engine.settings().harnesses)];
         requireThat(option("harness")?.trim(), "MISSING_OPTION", `--harness is required for task register; choose one of: ${harnesses.join(", ")}`);
         const loaded = loadDefinition(needArg());
-        result = mutate(() => engine.register(loaded, { ...(option("name") ? { name: required("name") } : {}), harness: required("harness"), ...(option("terminal") ? { terminal: required("terminal") } : {}), disabled: !!values.disabled }), loaded.hash); await startDaemon(engine);
+        result = mutate(() => engine.register(loaded, { ...(option("name") ? { name: required("name") } : {}), harness: required("harness"), ...(option("terminal") ? { terminal: required("terminal") } : {}), ...(option("session") ? { session: sessionMode(required("session")) } : {}), disabled: !!values.disabled }), loaded.hash); await startDaemon(engine);
       } else if (command === "update") {
-        allow("file", "harness", "terminal", "clear-harness", "clear-terminal");
-        requireThat(!(values["clear-harness"] && option("harness")) && !(values["clear-terminal"] && option("terminal")), "INVALID_OPTION", "Cannot set and clear the same override");
+        allow("file", "harness", "terminal", "session", "clear-harness", "clear-terminal", "clear-session");
+        requireThat(!(values["clear-harness"] && option("harness")) && !(values["clear-terminal"] && option("terminal")) && !(values["clear-session"] && option("session")), "INVALID_OPTION", "Cannot set and clear the same override");
         const task = engine.task(needArg()), loaded = loadDefinition(option("file") ?? task.source);
-        result = mutate(() => engine.update(task.id, loaded, { ...(values["clear-harness"] ? { harness: null } : option("harness") ? { harness: required("harness") } : {}), ...(values["clear-terminal"] ? { terminal: null } : option("terminal") ? { terminal: required("terminal") } : {}) }), loaded.hash); await startDaemon(engine);
+        result = mutate(() => engine.update(task.id, loaded, { ...(values["clear-harness"] ? { harness: null } : option("harness") ? { harness: required("harness") } : {}), ...(values["clear-terminal"] ? { terminal: null } : option("terminal") ? { terminal: required("terminal") } : {}), ...(values["clear-session"] ? { session: null } : option("session") ? { session: sessionMode(required("session")) } : {}) }), loaded.hash); await startDaemon(engine);
       } else if (command === "rename") {
         allow("name"); result = mutate(() => engine.rename(needArg(), required("name"), context));
       } else if (command === "list") { allow(); result = engine.tasks(); }
@@ -183,7 +184,7 @@ export async function main() {
       else if (command === "wait") { allow(); result = await waitFor(engine, "run", needArg()); }
       else if (command === "stop") { allow("force"); result = mutate(() => engine.stop(needArg(), !!values.force)); }
       else if (command === "confirm-ended") { allow("reason"); requireThat(!context, "OPERATOR_REQUIRED", "Confirmation is an operator command; unset the run context", 4); result = mutate(() => engine.confirmEnded(needArg(), required("reason"), alive)); }
-      else if (command === "resume") { allow(); requireThat(!context, "OPERATOR_REQUIRED", "Resuming is an operator command; unset the run context", 4); result = mutate(() => engine.resume(needArg())); await startDaemon(engine); }
+      else if (command === "resume") { allow("session"); requireThat(!context, "OPERATOR_REQUIRED", "Resuming is an operator command; unset the run context", 4); result = mutate(() => engine.resume(needArg(), option("session") ? sessionMode(required("session")) : undefined)); await startDaemon(engine); }
       else if (command === "logs") {
         allow("current", "follow"); const id = currentRun(); engine.run(id); const file = join(p.logs, `${id}.log`);
         if (!values.follow) result = { run_id: id, log: existsSync(file) ? readFileSync(file, "utf8") : "", events: engine.events(id) };

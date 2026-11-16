@@ -40,6 +40,11 @@ test.skipIf(process.platform !== "linux")("Konsole task titles cannot add profil
     const args: string[] = JSON.parse(readFileSync(log, "utf8"));
     expect(args[args.indexOf("-p") + 1]).toBe("tabtitle=Impulse: label；Command=unwanted [12345678]");
     expect(args.slice(args.indexOf("-e") + 1)).toEqual(descriptor.runner.command);
+    expect(args).toContain("--hold");
+    rmSync(log);
+    await launchTerminal({ ...descriptor, profile: { ...descriptor.profile, session: "close-on-success" } }, join(home, "launch.json"));
+    for (let i = 0; i < 100 && !existsSync(log); i++) await Bun.sleep(10);
+    expect(JSON.parse(readFileSync(log, "utf8"))).not.toContain("--hold");
   } finally {
     if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
     if (previousLog === undefined) delete process.env.IMPULSE_TEST_TITLE_LOG; else process.env.IMPULSE_TEST_TITLE_LOG = previousLog;
@@ -70,6 +75,10 @@ else if (args.includes("org.kde.yakuake.terminalIdsForSessionId")) console.log("
     const invocation = calls.find(args => args.includes("org.kde.yakuake.runCommandInTerminal"))!;
     expect(invocation.at(-2)).toBe("42");
     expect(invocation.at(-1)).toBe("'/usr/bin/impulse' '_runner' '/tmp/owned-launch.json'");
+    rmSync(log);
+    await launchTerminal({ ...descriptor, profile: { ...descriptor.profile, session: "close-on-success" } }, join(home, "launch.json"));
+    const closing = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line)).find((args: string[]) => args.includes("org.kde.yakuake.runCommandInTerminal"));
+    expect(closing.at(-1)).toBe("exec '/usr/bin/impulse' '_runner' '/tmp/owned-launch.json'");
   } finally {
     if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
     if (previousLog === undefined) delete process.env.IMPULSE_TEST_TITLE_LOG; else process.env.IMPULSE_TEST_TITLE_LOG = previousLog;

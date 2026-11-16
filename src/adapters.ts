@@ -35,7 +35,7 @@ export async function launchTerminal(descriptor: LaunchDescriptor, file: string)
     case "konsole":
       if (process.platform !== "linux") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Konsole requires Linux", 6);
       // Konsole's property parser has no escape for its semicolon separator.
-      await detach(["konsole", "--separate", "--hold", "--workdir", descriptor.runner.cwd, "-p", `tabtitle=${title.replaceAll(";", "；")}`, "-e", ...command]); return;
+      await detach(["konsole", "--separate", ...(profile.session === "close-on-success" ? [] : ["--hold"]), "--workdir", descriptor.runner.cwd, "-p", `tabtitle=${title.replaceAll(";", "；")}`, "-e", ...command]); return;
     case "yakuake": {
       if (process.platform !== "linux") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Yakuake requires Linux", 6);
       const qdbus = Bun.which("qdbus6") ?? Bun.which("qdbus") ?? "qdbus6";
@@ -57,11 +57,12 @@ export async function launchTerminal(descriptor: LaunchDescriptor, file: string)
       const invocation = command.map(shellQuote).join(" ");
       // A Flatpak terminal profile can itself start a host shell. Check where this shell executes.
       const hostCommand = flatpak ? ["sh", "-c", `if test -f /.flatpak-info; then exec flatpak-spawn --host --watch-bus ${invocation}; else exec ${invocation}; fi`] : command;
-      runCommand([...base, "/yakuake/sessions", "org.kde.yakuake.runCommandInTerminal", terminal, hostCommand.map(shellQuote).join(" ")]); return;
+      // exec replaces the tab's shell, so the tab closes when the runner exits.
+      runCommand([...base, "/yakuake/sessions", "org.kde.yakuake.runCommandInTerminal", terminal, (profile.session === "close-on-success" ? "exec " : "") + hostCommand.map(shellQuote).join(" ")]); return;
     }
     case "terminal-app": {
       if (process.platform !== "darwin") throw new ImpulseError("UNSUPPORTED_TERMINAL", "Terminal.app requires macOS", 6);
-      const shell = command.map(shellQuote).join(" ");
+      const shell = (profile.session === "close-on-success" ? "exec " : "") + command.map(shellQuote).join(" ");
       // argv is data to AppleScript, never interpolated into AppleScript source.
       runCommand(["osascript", "-e", 'on run argv\ntell application "Terminal"\nset launchedTab to do script (item 1 of argv)\nset custom title of launchedTab to (item 2 of argv)\nend tell\nend run', shell, title]); return;
     }
