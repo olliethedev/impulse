@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { shellQuote } from "../src/platform.ts";
 
 test.skipIf(process.platform === "win32")("Pi launches preserve instructions, require explicit outcomes and support scoped cancellation", async () => {
-  const home = mkdtempSync(join(tmpdir(), "impulse-pi ' $-")), bin = join(home, "bin"), cli = [process.execPath, resolve("src/cli.ts")];
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "impulse-pi ' $-"))), bin = join(home, "bin"), cli = [process.execPath, resolve("src/cli.ts")];
   const env = { ...process.env, IMPULSE_HOME: home, IMPULSE_CONTEXT: "", PI_CODING_AGENT_DIR: join(home, "pi-agent"), PATH: `${bin}:${process.env.PATH}` };
   async function invoke(args: string[], cwd = home) {
     const child = Bun.spawn([...cli, ...args, "--json"], { cwd, env, stdout: "pipe", stderr: "pipe" });
