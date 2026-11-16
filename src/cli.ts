@@ -39,6 +39,7 @@ Usage: impulse <group> <command> [arguments] [options]
   run diagnose RUN                      (read-only execution and recovery evidence)
   run stop RUN [--force]                 (does not disable future runs)
   run confirm-ended RUN --reason TEXT   (operator verification of uncertain work)
+  run resume RUN                        (new run that continues an ended agent's Claude Code/Codex session)
   agent request --instructions TEXT | --instructions-file FILE [--no-wait]
   agent show ID | wait ID
   agent observe --file FILE             (optional harness progress JSON)
@@ -182,6 +183,7 @@ export async function main() {
       else if (command === "wait") { allow(); result = await waitFor(engine, "run", needArg()); }
       else if (command === "stop") { allow("force"); result = mutate(() => engine.stop(needArg(), !!values.force)); }
       else if (command === "confirm-ended") { allow("reason"); requireThat(!context, "OPERATOR_REQUIRED", "Confirmation is an operator command; unset the run context", 4); result = mutate(() => engine.confirmEnded(needArg(), required("reason"), alive)); }
+      else if (command === "resume") { allow(); requireThat(!context, "OPERATOR_REQUIRED", "Resuming is an operator command; unset the run context", 4); result = mutate(() => engine.resume(needArg())); await startDaemon(engine); }
       else if (command === "logs") {
         allow("current", "follow"); const id = currentRun(); engine.run(id); const file = join(p.logs, `${id}.log`);
         if (!values.follow) result = { run_id: id, log: existsSync(file) ? readFileSync(file, "utf8") : "", events: engine.events(id) };

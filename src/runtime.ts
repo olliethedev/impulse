@@ -132,7 +132,10 @@ export async function runner(file: string) {
       const trust = await prepareProjectTrust(descriptor.profile.harness, run.definition.cwd, engine.settings().trust?.roots ?? [], env);
       if (trust) console.log(`Impulse trusted ${trust.projects.join(", ")} in ${trust.file}`);
     }
-    const initialPrompt = `Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}. Follow them to complete this Impulse assignment and report its explicit outcome using the supplied CLI context.`;
+    const resumes = ticket.kind === "agent" ? engine.agent(ticket.id).resumes : undefined;
+    const initialPrompt = resumes
+      ? `Impulse resumed this session as a new run because the earlier one ended before you reported an outcome; its context no longer accepts reports. Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}, which carry the new context. Check what you already completed, finish the remaining work, and report its explicit outcome using the new CLI context.`
+      : `Read the assignment instructions in ${JSON.stringify(descriptor.instructions_file)}. Follow them to complete this Impulse assignment and report its explicit outcome using the supplied CLI context.`;
     let command: string[];
     if (script) {
       if (run.definition.work.kind !== "script") throw new Error("Script ticket has agent definition");
@@ -147,12 +150,12 @@ export async function runner(file: string) {
     } else if (descriptor.profile.harness === "claude-code") {
       const version = Bun.spawnSync(["claude", "--version"], { stdout: "pipe", stderr: "pipe", timeout: 15000 });
       if (version.exitCode === 0 && supportsClaudeObservation(version.stdout.toString())) {
-        const session = randomUUID(), settings = join(descriptor.paths.launches, `${ticket.id}.claude-settings.json`);
+        const session = resumes?.session_id ?? randomUUID(), settings = join(descriptor.paths.launches, `${ticket.id}.claude-settings.json`);
         privateJson(settings, claudeSettings(selfCommand(), descriptor.context_file, session));
-        command = ["claude", "--settings", settings, "--session-id", session, initialPrompt];
+        command = ["claude", "--settings", settings, ...(resumes ? ["--resume", session] : ["--session-id", session]), initialPrompt];
         engine.observe(context, { state: "unavailable", session_id: session, note: "Waiting for Claude observation hooks. User or managed policy can disable hooks." }, "claude-hooks");
       } else {
-        command = ["claude", initialPrompt];
+        command = ["claude", ...(resumes ? ["--resume", resumes.session_id] : []), initialPrompt];
         engine.observe(context, { state: "unavailable", note: "This Claude Code version has no verified observation adapter; inspect its terminal and owned work." }, "claude-hooks");
       }
     }
@@ -175,9 +178,9 @@ export async function runner(file: string) {
         }
         if (!existsSync(socket)) throw new Error(serverError ?? "Private Codex backend did not start");
         codexSocket = socket;
-        command = ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, initialPrompt];
+        command = resumes ? ["codex", "resume", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, resumes.session_id, initialPrompt] : ["codex", "--remote", `unix://${socket}`, "--cd", run.definition.cwd, initialPrompt];
       } else {
-        command = ["codex", "--cd", run.definition.cwd, initialPrompt];
+        command = resumes ? ["codex", "resume", "--cd", run.definition.cwd, resumes.session_id, initialPrompt] : ["codex", "--cd", run.definition.cwd, initialPrompt];
         external = help.stdout.toString().includes("shared local app-server");
         engine.observe(context, { state: "unavailable", note: "This Codex launch has no private observation transport; its process/external lifecycle still applies." }, "codex-app-server");
       }
@@ -198,7 +201,7 @@ export async function runner(file: string) {
       catch (error) {
         if (activeStatuses.includes(engine.agent(ticket.id).status)) console.error(`Impulse observer: ${message(error)}`);
       }
-    });
+    }, resumes?.session_id);
     const result = await exit;
     await observer?.close(); observer = undefined;
     if (server) { try { stopChild(server, false, true); } catch { /* Reconciliation retains uncertainty below if needed. */ } }

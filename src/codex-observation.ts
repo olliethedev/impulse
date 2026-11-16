@@ -18,8 +18,9 @@ function safeText(value: unknown, fallback: string, max = 4096): string {
 }
 
 /** Only connects to the private socket created by this runner. Never subscribes, resumes or starts work. */
-export function observeCodex(socket: string, prompt: string, record: (observation: Observation) => void) {
-  let stopped = false, session: string | undefined, ws: Socket | undefined, sequence = 0;
+export function observeCodex(socket: string, prompt: string, record: (observation: Observation) => void, knownSession?: string) {
+  // A resumed assignment already knows its session; its preview is the original prompt.
+  let stopped = false, session: string | undefined = knownSession, ws: Socket | undefined, sequence = 0;
   let aliasDirectory: string | undefined, socketPath = socket;
   let timer: ReturnType<typeof setTimeout> | undefined, wake: (() => void) | undefined;
   const pending = new Map<number, { resolve: (value: RecordValue) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();

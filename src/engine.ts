@@ -7,6 +7,8 @@ import { activeStatuses, type Agent, type ClockSample, type Context, type Due, t
 
 const id = (prefix: string) => `${prefix}_${randomUUID()}`;
 const active = (status: string) => activeStatuses.includes(status as Run["status"]);
+const resumableStatuses: Agent["status"][] = ["unconfirmed", "failed", "interrupted"];
+const resumableSession = (agent: Agent) => agent.observation?.source === "claude-hooks" || agent.observation?.source === "codex-app-server" ? agent.observation.session_id : undefined;
 export interface Ticket { kind: "script" | "agent"; id: string; ticket: string; run_id: string }
 export class Engine {
   constructor(public store: Store, public now: () => number = Date.now, private clock: () => ClockSample | undefined = () => undefined) {}
@@ -167,6 +169,22 @@ export class Engine {
       requireThat(!this.runs(task.id).some(r => active(r.status)), "TASK_ACTIVE", "This task already has active work", 4);
       if (reset) { task.next = null; this.store.put("tasks", task); }
       return this.admit(task, "manual", 0);
+    });
+  }
+  resume(runId: string): Run {
+    return this.store.atomic(() => {
+      const previous = this.run(runId), task = this.task(previous.task_id);
+      requireThat(!task.removed, "NOT_FOUND", "Task is unregistered", 3);
+      requireThat(!active(previous.status), "RUN_ACTIVE", "This run is still active; resume it only after it ends", 4);
+      const agent = previous.root_agent ? this.agent(previous.root_agent) : null;
+      requireThat(agent && resumableStatuses.includes(agent.status), "NOT_RESUMABLE", "Only agent work that ended unconfirmed, failed or interrupted can be resumed", 4);
+      const session = resumableSession(agent);
+      requireThat(session, "SESSION_UNKNOWN", "No Claude Code or Codex session was recorded for this agent; start a fresh run with task run", 4);
+      requireThat(previous.revision === task.revision, "CONFIG_CHANGED", `This run used revision ${previous.revision}; revision ${task.revision} is applied, so start a fresh run with task run`, 4);
+      requireThat(!this.runs(task.id).some(r => active(r.status)), "TASK_ACTIVE", "This task already has active work", 4);
+      const run = this.admit(task, "resume", 0), next = this.agent(run.root_agent!);
+      next.resumes = { run_id: previous.id, agent_id: agent.id, session_id: session };
+      this.store.put("agents", next); this.event(task.id, run.id, "resumed", next.resumes); return run;
     });
   }
   private execution(): Execution { return { status: "queued", ticket: id("ticket"), runner_nonce: null, pid: null, boot_id: null, heartbeat: null, launch_at: null, exit_code: null, ended_at: null, error: null }; }
@@ -447,6 +465,8 @@ export class Engine {
     if (active(run.status)) recovery.push({ command: ["impulse", "run", "stop", run.id], when: "If abandoning this run, request scoped cancellation; verify tools and external work have stopped." });
     if (components.some(c => ["uncertain", "stopping"].includes(c.status))) recovery.push({ command: ["impulse", "run", "confirm-ended", run.id, "--reason", "<verified evidence>"], when: "Only after every runner and all owned/external work have ended. A missing PID or failed turn alone is insufficient." });
     for (const c of components.filter(c => c.kind === "agent" && c.status === "unconfirmed")) recovery.push({ command: ["impulse", "agent", "resolve", c.id, "--outcome", "failed", "--reason", "<verified outcome>"], when: "Record failed for incomplete work; choose success only when all required results are verified." });
+    const root = run.root_agent ? this.agent(run.root_agent) : null;
+    if (!active(run.status) && root && resumableStatuses.includes(root.status) && resumableSession(root)) recovery.push({ command: ["impulse", "run", "resume", run.id], when: "To continue the agent's own harness session in a new run. It reruns nothing by itself, but check what the session already did before it continues." });
     return { run_id: run.id, task_id: task.id, task_name: task.name, status: run.status, harness: run.profile.harness,
       checked_at: this.now(), replacement_blocked: activeRuns.length > 0, components, issues, recovery,
       schedule: { enabled: task.enabled, hold: task.hold, next: task.next, active_runs: activeRuns },

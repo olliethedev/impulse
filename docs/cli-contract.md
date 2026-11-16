@@ -39,6 +39,7 @@ Contract supporting [the v1 spec](spec.md). The initial CLI implements the comma
 | `run logs RUN\|--current [--follow]` | Read Impulse-owned logs. `--follow --json` streams events. |
 | `run stop RUN [--force]` | Commit cancellation intent and request termination of all owned work. Return the current stopping/cancelled state; `run wait` can wait for actual termination. |
 | `run confirm-ended RUN --reason TEXT` | An operator confirms that uncertain/stopping execution and its external work have ended. Requires dead runners; records interruption or unconfirmed work, never success. |
+| `run resume RUN` | An operator starts a new run whose agent reopens the ended run's Claude Code or Codex session with a new context. The run's root agent must have ended unconfirmed, failed or interrupted with a recorded session, the task revision must be unchanged, and the task must have no active run. The ended run keeps its outcome. |
 | `agent request --instructions TEXT\|--instructions-file FILE [--no-wait]` | Request an agent within the current run. Wait for its reported outcome by default. |
 | `agent show ID` / `agent wait ID` | Inspect or wait for a previously requested agent. |
 | `agent observe --file FILE` | Current-agent callback recording optional harness progress JSON. Uses the same context fencing and request receipts as other callbacks; never establishes termination or success. |

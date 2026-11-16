@@ -91,11 +91,12 @@ An agent request belongs to the current run, including with `--no-wait`. To laun
 | --- | --- |
 | `impulse run confirm-ended RUN --reason TEXT` | Record an operator's verification that uncertain execution and its external work have ended. Requires dead runners and never declares success. |
 | `impulse agent resolve AGENT_ID --outcome success\|failed --reason TEXT` | Record an operator's outcome assertion for ended, unconfirmed agent work. |
+| `impulse run resume RUN` | Start a new run that reopens the ended agent's Claude Code or Codex session, so it can finish its work and report an outcome. |
 | `impulse notification list` | Inspect notification delivery status. |
 | `impulse notification retry NOTIFICATION_ID` | Explicitly redeliver a notification. |
 | `impulse history prune [--task TASK]` | Preview eligible history/log cleanup. Add `--apply` to delete eligible records and logs. |
 
-`run confirm-ended` and `agent resolve` are operator commands used outside a run context, after verifying what happened. See [recovery procedures](docs/operations.md#timing-failures-and-recovery).
+`run confirm-ended`, `agent resolve` and `run resume` are operator commands used outside a run context, after verifying what happened. See [recovery procedures](docs/operations.md#timing-failures-and-recovery).
 
 Start a failure investigation with `impulse run diagnose RUN --json`. Supported Codex launches observe their private app-server; Claude Code 2.1.269+ uses session-scoped observation hooks. Older launches and custom harnesses retain their existing lifecycle behavior, and diagnostics identify unavailable evidence. Custom wrappers can opt into `agent observe`. A failed model turn raises an alert while execution remains tracked: tools and external work may still be running. No automatic retry, model change, or schedule change follows an observation.
 

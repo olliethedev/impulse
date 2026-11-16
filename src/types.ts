@@ -72,6 +72,8 @@ export interface Agent extends Execution {
   id: string; run_id: string; parent_id: string | null; instructions: string; created_at: number;
   context: Context; summary: string | null; handled: { reason: string; at: number } | null;
   outcome: "succeeded" | "failed" | null;
+  /** The ended assignment whose harness session this agent continues. */
+  resumes?: { run_id: string; agent_id: string; session_id: string };
 }
 export interface Event { id: string; run_id: string | null; task_id: string; type: string; at: number; detail: unknown }
 export interface Notification { id: string; run_id: string; task_id: string; task_name: string; outcome: Outcome;
