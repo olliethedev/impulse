@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { alive, shellQuote } from "../src/platform.ts";
 
 test.skipIf(process.platform === "win32")("session modes run agents headless or close their session after success", async () => {
-  const home = mkdtempSync(join(tmpdir(), "impulse-session ' $-")), bin = join(home, "bin"), cli = [process.execPath, resolve("src/cli.ts")];
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "impulse-session ' $-"))), bin = join(home, "bin"), cli = [process.execPath, resolve("src/cli.ts")];
   const env = { ...process.env, IMPULSE_HOME: home, IMPULSE_CONTEXT: "", CODEX_HOME: join(home, "codex-home"), CLAUDE_CONFIG_DIR: join(home, "claude-home"), PI_CODING_AGENT_DIR: join(home, "pi-home"), PATH: `${bin}:${process.env.PATH}` };
   async function invoke(args: string[]) {
     const child = Bun.spawn([...cli, ...args, "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe" });
